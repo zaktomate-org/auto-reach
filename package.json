@@ -1,0 +1,16 @@
+{
+  "name": "cold-outreach",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "google-auth-library": "^10.6.2",
+    "google-spreadsheet": "^5.2.0"
+  }
+}

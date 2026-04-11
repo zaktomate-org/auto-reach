@@ -1,0 +1,27 @@
+# Service account credentials (never commit)
+account.json
+
+# Config with sensitive IDs
+config.json
+
+# Helper scripts (independent logic per script)
+helpers/
+
+# Dependencies
+node_modules/
+
+# Bun lockfile and build
+bun.lockb
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
