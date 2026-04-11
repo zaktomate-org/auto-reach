@@ -4,8 +4,11 @@ account.json
 # Config with sensitive IDs
 config.json
 
+auth.json
+
 # Helper scripts (independent logic per script)
 helpers/
+elements/
 
 # Don't ignore public (frontend)
 !public/
