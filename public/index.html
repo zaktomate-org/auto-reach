@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cold Outreach CRM</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; padding: 2rem; }
+    h1 { margin-bottom: 1.5rem; font-size: 1.5rem; }
+    .container { max-width: 600px; margin: 0 auto; }
+    .card { background: #fff; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 600; font-size: 0.875rem; }
+    input, select { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem; }
+    button { width: 100%; padding: 0.625rem; background: #2563eb; color: #fff; border: none; border-radius: 4px; font-size: 0.875rem; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #93c5fd; cursor: not-allowed; }
+    .msg { padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.875rem; display: none; }
+    .msg.ok { display: block; background: #dcfce7; color: #166534; }
+    .msg.err { display: block; background: #fee2e2; color: #991b1b; }
+    .row { display: flex; gap: 1rem; }
+    .row > div { flex: 1; }
+    .hint { font-size: 0.75rem; color: #666; margin-top: -0.75rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>CRM Entry</h1>
+
+    <div class="card">
+      <form id="entryForm">
+        <label>Company Name</label>
+        <input type="text" id="company" required>
+
+        <label>WhatsApp Number</label>
+        <input type="text" id="whatsapp" required>
+
+        <label>Type</label>
+        <select id="type" required></select>
+
+        <label>Website URL</label>
+        <input type="url" id="website" placeholder="https://example.com">
+
+        <label>Facebook Page URL</label>
+        <input type="url" id="facebook" placeholder="https://facebook.com/page">
+        <p class="hint">Provide either Website or Facebook URL</p>
+
+        <div class="row">
+          <div>
+            <label>Sent by</label>
+            <select id="sentBy" required></select>
+          </div>
+          <div>
+            <label>Sent in</label>
+            <select id="sentIn" required></select>
+          </div>
+        </div>
+
+        <label>Message Sent</label>
+        <select id="messageSent" required></select>
+
+        <button type="submit" id="submitBtn">Submit</button>
+        <div class="msg" id="formMsg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h1>Number Checker</h1>
+      <form id="checkForm">
+        <label>WhatsApp Number</label>
+        <input type="text" id="checkNumber" required>
+        <button type="submit">Check</button>
+        <div class="msg" id="checkMsg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function cleanPhone(raw) {
+      let num = raw.replace(/[\s\-]/g, '');
+      const i = num.indexOf('1');
+      if (i !== -1) num = num.slice(i);
+      return num;
+    }
+
+    function cleanUrl(raw) {
+      return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+    }
+
+    function showMsg(id, text, ok) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = 'msg ' + (ok ? 'ok' : 'err');
+    }
+
+    // Load dropdown config
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => {
+        const type = document.getElementById('type');
+        const sentBy = document.getElementById('sentBy');
+        const sentIn = document.getElementById('sentIn');
+        const messageSent = document.getElementById('messageSent');
+
+        cfg.dropdowns.type.forEach(v => type.appendChild(new Option(v, v)));
+        cfg.dropdowns.sentBy.forEach(v => sentBy.appendChild(new Option(v, v)));
+        cfg.dropdowns.sentIn.forEach(v => sentIn.appendChild(new Option(v, v)));
+        cfg.dropdowns.messageSent.forEach(v => messageSent.appendChild(new Option(v, v)));
+
+        // Restore persisted selections
+        const saved = JSON.parse(localStorage.getItem('crm-selections') || '{}');
+        if (saved.type) type.value = saved.type;
+        if (saved.sentBy) sentBy.value = saved.sentBy;
+        if (saved.sentIn) sentIn.value = saved.sentIn;
+        if (saved.messageSent) messageSent.value = saved.messageSent;
+
+        [type, sentBy, sentIn, messageSent].forEach(el => {
+          el.addEventListener('change', persistSelections);
+        });
+      });
+
+    function persistSelections() {
+      const data = {
+        type: document.getElementById('type').value,
+        sentBy: document.getElementById('sentBy').value,
+        sentIn: document.getElementById('sentIn').value,
+        messageSent: document.getElementById('messageSent').value,
+      };
+      localStorage.setItem('crm-selections', JSON.stringify(data));
+    }
+
+    // Form submit
+    document.getElementById('entryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+
+      const company = document.getElementById('company').value.trim();
+      const whatsapp = cleanPhone(document.getElementById('whatsapp').value.trim());
+      const type = document.getElementById('type').value;
+      const website = cleanUrl(document.getElementById('website').value.trim());
+      const facebook = document.getElementById('facebook').value.trim();
+      const sentBy = document.getElementById('sentBy').value;
+      const sentIn = document.getElementById('sentIn').value;
+      const messageSent = document.getElementById('messageSent').value;
+
+      if (!website && !facebook) {
+        showMsg('formMsg', 'Provide either Website URL or Facebook URL', false);
+        btn.disabled = false;
+        btn.textContent = 'Submit';
+        return;
+      }
+
+      const res = await fetch('/api/entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company, whatsapp, type, website, facebook, sentBy, sentIn, messageSent }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showMsg('formMsg', 'Entry added!', true);
+        document.getElementById('company').value = '';
+        document.getElementById('whatsapp').value = '';
+        document.getElementById('website').value = '';
+        document.getElementById('facebook').value = '';
+      } else {
+        showMsg('formMsg', data.error || 'Failed to add entry', false);
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+    });
+
+    // Number checker
+    document.getElementById('checkForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const num = document.getElementById('checkNumber').value.trim();
+      const res = await fetch(`/api/check?number=${encodeURIComponent(num)}`);
+      const text = await res.text();
+      const isMatch = JSON.parse(text) === 'match';
+      showMsg('checkMsg', isMatch ? 'Number found in CRM' : 'Number not found', isMatch);
+    });
+  </script>
+</body>
+</html>

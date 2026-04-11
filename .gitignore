@@ -7,6 +7,9 @@ config.json
 # Helper scripts (independent logic per script)
 helpers/
 
+# Don't ignore public (frontend)
+!public/
+
 # Dependencies
 node_modules/
 
