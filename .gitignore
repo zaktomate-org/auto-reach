@@ -13,6 +13,7 @@ node_modules/
 # Bun lockfile and build
 bun.lockb
 dist/
+bun.lock
 
 # IDE
 .vscode/
