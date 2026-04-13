@@ -85,6 +85,7 @@ Copy `config.example.json` to `config.json` and fill in:
 
 - **`autoSender.enabled`** — set `true` to activate the auto-sender loop
 - **`autoSender.sentBy`** — which team member to watch for (must match `Sent by` column values)
+- **`autoSender.ignoreSentByFilter`** — set `true` to match any row where `Message Sent = "no"` regardless of who it's assigned to. When `false` (default), only matches rows assigned to `sentBy`
 - **`autoSender.intervalMs`** — check interval in ms (default 600000 = 10 min). Timer starts **after** a send completes
 - **`templates`** — one message template per type. Placeholders: `{{Company_Name}}`, `{{Your_Name}}`, `{{Facebook_Page_Name}}`
 - **`banglaNames`** — maps English names to Bangla for the F-Commerce template

@@ -9,6 +9,7 @@
   "autoSender": {
     "enabled": false,
     "sentBy": "Shoyeb",
+    "ignoreSentByFilter": false,
     "intervalMs": 600000
   },
   "templates": {
