@@ -3,6 +3,7 @@ import { JWT } from 'google-auth-library';
 import { chromium } from 'playwright';
 import creds from './account.json';
 import config from './config.json';
+import { writeFile } from 'fs/promises';
 
 const auth = new JWT({
   email: creds.client_email,
@@ -163,7 +164,7 @@ async function sendWhatsApp(number: string, message: string) {
     await delay(60_000);
 
     await context.storageState({ path: 'auth.json' });
-    console.log('auth.json saved.');
+    console.log('  auth.json saved.');
   } finally {
     await browser.close();
   }
@@ -284,17 +285,20 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
 
+    // Serve frontend
     if (url.pathname === '/') {
       const file = Bun.file('./public/index.html');
       return new Response(file, { headers: { 'Content-Type': 'text/html' } });
     }
 
+    // GET /api/config
     if (url.pathname === '/api/config' && req.method === 'GET') {
       return new Response(JSON.stringify(config), {
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
+    // GET /api/check?number=<number>
     if (url.pathname === '/api/check' && req.method === 'GET') {
       const input = url.searchParams.get('number');
       if (!input) {
@@ -311,6 +315,7 @@ const server = Bun.serve({
       });
     }
 
+    // POST /api/entry
     if (url.pathname === '/api/entry' && req.method === 'POST') {
       const body = await req.json();
       try {
@@ -337,6 +342,29 @@ const server = Bun.serve({
     if (url.pathname === '/api/force-check' && req.method === 'POST') {
       autoSenderState.forceCheck = true;
       return new Response(JSON.stringify({ ok: true, message: 'Force check triggered' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /api/templates
+    if (url.pathname === '/api/templates' && req.method === 'GET') {
+      return new Response(JSON.stringify(config.templates), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /api/templates
+    if (url.pathname === '/api/templates' && req.method === 'POST') {
+      const body = await req.json();
+      if (body && typeof body === 'object') {
+        config.templates = body as Record<string, string>;
+        await writeFile('./config.json', JSON.stringify(config, null, 2));
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: 'Invalid templates' }), {
+        status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }

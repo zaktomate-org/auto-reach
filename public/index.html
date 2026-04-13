@@ -92,6 +92,12 @@
       <button type="button" class="btn-green" id="forceCheckBtn">Force Check / Send Now</button>
       <div class="msg" id="forceMsg"></div>
     </div>
+
+    <div class="card">
+      <h1>Message Templates</h1>
+      <div id="templatesContainer"></div>
+      <div class="msg" id="templateMsg"></div>
+    </div>
   </div>
 
   <script>
@@ -226,6 +232,52 @@
         btn.textContent = 'Force Check / Send Now';
       }, 5000);
     });
+
+    // Templates
+    (async function loadTemplates() {
+      const res = await fetch('/api/templates');
+      const templates = await res.json();
+      const container = document.getElementById('templatesContainer');
+
+      Object.entries(templates).forEach(([key, value]) => {
+        const label = document.createElement('label');
+        label.textContent = key;
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.dataset.type = key;
+        textarea.style.cssText = 'width:100%; min-height:100px; padding:0.5rem; margin-bottom:0.75rem; border:1px solid #d1d5db; border-radius:6px; font-size:0.8rem; font-family:inherit; resize:vertical; line-height:1.4;';
+        container.appendChild(label);
+        container.appendChild(textarea);
+      });
+
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'btn-primary';
+      saveBtn.textContent = 'Save Templates';
+      saveBtn.style.marginTop = '0.25rem';
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+        const data = {};
+        container.querySelectorAll('textarea').forEach((ta) => {
+          data[ta.dataset.type] = ta.value;
+        });
+        const res = await fetch('/api/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const result = await res.json();
+        if (res.ok) {
+          showMsg('templateMsg', 'Templates saved!', true);
+        } else {
+          showMsg('templateMsg', result.error || 'Failed to save', false);
+        }
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Templates';
+      });
+      container.appendChild(saveBtn);
+    })();
   </script>
 </body>
 </html>
