@@ -73,6 +73,17 @@
         <div class="msg" id="checkMsg"></div>
       </form>
     </div>
+
+    <div class="card">
+      <h1>Auto-Sender</h1>
+      <button type="button" id="viewLogsBtn">View Last 5 Logs</button>
+      <div id="logsPanel" style="display:none; margin-top:0.75rem;">
+        <pre id="logsContent" style="background:#f9f9f9; padding:0.75rem; border-radius:4px; font-size:0.75rem; max-height:250px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;"></pre>
+        <button type="button" id="closeLogsBtn" style="margin-top:0.5rem; background:#6b7280;">Close</button>
+      </div>
+      <button type="button" id="forceCheckBtn" style="margin-top:0.75rem; background:#059669;">Force Check / Send Now</button>
+      <div class="msg" id="forceMsg"></div>
+    </div>
   </div>
 
   <script>
@@ -181,6 +192,36 @@
       const text = await res.text();
       const isMatch = JSON.parse(text) === 'match';
       showMsg('checkMsg', isMatch ? 'Number found in CRM' : 'Number not found', isMatch);
+    });
+
+    // View logs
+    document.getElementById('viewLogsBtn').addEventListener('click', async () => {
+      const res = await fetch('/api/auto-logs');
+      const logs = await res.json();
+      const content = document.getElementById('logsContent');
+      if (logs.length === 0) {
+        content.textContent = 'No logs yet.';
+      } else {
+        content.textContent = logs.join('\n');
+      }
+      document.getElementById('logsPanel').style.display = 'block';
+    });
+
+    document.getElementById('closeLogsBtn').addEventListener('click', () => {
+      document.getElementById('logsPanel').style.display = 'none';
+    });
+
+    // Force check
+    document.getElementById('forceCheckBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('forceCheckBtn');
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      showMsg('forceMsg', 'Triggered force check. Check back in a moment.', true);
+      await fetch('/api/force-check', { method: 'POST' });
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'Force Check / Send Now';
+      }, 5000);
     });
   </script>
 </body>

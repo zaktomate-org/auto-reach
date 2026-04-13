@@ -173,6 +173,18 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── Auto-sender state ────────────────────────────────────
+const autoSenderState = {
+  logs: [] as string[],
+  forceCheck: false,
+  waitUntil: null as Promise<void> | null,
+};
+
+function pushLog(msg: string) {
+  autoSenderState.logs.push(msg);
+  if (autoSenderState.logs.length > 5) autoSenderState.logs.shift();
+}
+
 // ── Auto-sender loop ─────────────────────────────────────
 async function autoSenderLoop() {
   if (!config.autoSender.enabled) {
@@ -181,9 +193,12 @@ async function autoSenderLoop() {
   }
 
   if (config.autoSender.ignoreSentByFilter) {
+    pushLog('Auto-sender enabled. Watching for all leads with Message Sent = "no".');
     console.log('Auto-sender enabled. Watching for all leads with Message Sent = "no".');
   } else {
-    console.log(`Auto-sender enabled. Watching for leads assigned to "${config.autoSender.sentBy}".`);
+    const msg = `Auto-sender enabled. Watching for leads assigned to "${config.autoSender.sentBy}".`;
+    pushLog(msg);
+    console.log(msg);
   }
 
   while (true) {
@@ -191,50 +206,77 @@ async function autoSenderLoop() {
       const lead = await findPendingLead();
 
       if (!lead) {
-        console.log(`[${new Date().toISOString()}] No pending leads. Checking again in ${config.autoSender.intervalMs / 60000} min...`);
-        await delay(config.autoSender.intervalMs);
-        continue;
-      }
+        const msg = `[${new Date().toISOString()}] No pending leads. Waiting ${config.autoSender.intervalMs / 60000} min...`;
+        pushLog(msg);
+        console.log(msg);
+      } else {
+        const type = lead.get('Type')?.trim();
+        const template = (config.templates as Record<string, string>)[type || ''];
 
-      const type = lead.get('Type')?.trim();
-      const template = (config.templates as Record<string, string>)[type || ''];
+        if (!template) {
+          const msg = `Unknown type "${type}" for ${lead.get('Company Name')}. Skipping.`;
+          pushLog(msg);
+          console.log(msg);
+        } else {
+          const whatsapp = lead.get('WhatsApp')?.trim();
+          const companyName = lead.get('Company Name')?.trim() || 'Unknown';
 
-      if (!template) {
-        console.log(`Unknown type "${type}" for ${lead.get('Company Name')}. Skipping.`);
-        await delay(config.autoSender.intervalMs);
-        continue;
-      }
+          if (!whatsapp) {
+            const msg = `[${new Date().toISOString()}] No WhatsApp number for ${companyName}. Skipping.`;
+            pushLog(msg);
+            console.log(msg);
+          } else {
+            const message = buildMessage(template, lead);
+            let sent = false;
 
-      const whatsapp = lead.get('WhatsApp')?.trim();
-      const companyName = lead.get('Company Name')?.trim() || 'Unknown';
+            while (!sent) {
+              try {
+                const msg = `[${new Date().toISOString()}] Sending to ${companyName} (${whatsapp}) [${type}]...`;
+                pushLog(msg);
+                console.log(msg);
 
-      if (!whatsapp) {
-        console.log(`[${new Date().toISOString()}] No WhatsApp number for ${companyName}. Skipping.`);
-        await delay(config.autoSender.intervalMs);
-        continue;
-      }
+                await sendWhatsApp(whatsapp, message);
+                await markMessageSent(lead);
 
-      const message = buildMessage(template, lead);
-      let sent = false;
-
-      while (!sent) {
-        try {
-          console.log(`[${new Date().toISOString()}] Sending to ${companyName} (${whatsapp}) [${type}]...`);
-          await sendWhatsApp(whatsapp, message);
-          await markMessageSent(lead);
-          console.log(`[${new Date().toISOString()}] CRM updated: Message Sent = yes, Date set for ${companyName}`);
-          sent = true;
-        } catch (err: any) {
-          console.error(`[${new Date().toISOString()}] Send failed for ${companyName}. Retrying in 60s...`, err.message);
-          await delay(60000);
+                const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes, Date set for ${companyName}`;
+                pushLog(okMsg);
+                console.log(okMsg);
+                sent = true;
+              } catch (err: any) {
+                const errMsg = `[${new Date().toISOString()}] Send failed for ${companyName}. Retrying in 60s...`;
+                pushLog(errMsg);
+                console.error(errMsg, err.message);
+                await delay(60000);
+              }
+            }
+          }
         }
       }
     } catch (err: any) {
-      console.error(`[${new Date().toISOString()}] Auto-sender error:`, err.message);
+      const msg = `[${new Date().toISOString()}] Auto-sender error: ${err.message}`;
+      pushLog(msg);
+      console.error(msg);
     }
 
-    console.log(`[${new Date().toISOString()}] Waiting ${config.autoSender.intervalMs / 60000} min before next check...`);
-    await delay(config.autoSender.intervalMs);
+    // Wait for interval or force check signal
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        autoSenderState.waitUntil = null;
+        resolve();
+      }, config.autoSender.intervalMs);
+
+      autoSenderState.waitUntil = new Promise<void>((res) => {
+        const check = setInterval(() => {
+          if (autoSenderState.forceCheck) {
+            autoSenderState.forceCheck = false;
+            clearTimeout(timer);
+            clearInterval(check);
+            res();
+            resolve();
+          }
+        }, 500);
+      });
+    });
   }
 }
 
@@ -284,6 +326,21 @@ const server = Bun.serve({
           headers: { 'Content-Type': 'application/json' },
         });
       }
+    }
+
+    // GET /api/auto-logs
+    if (url.pathname === '/api/auto-logs' && req.method === 'GET') {
+      return new Response(JSON.stringify(autoSenderState.logs), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /api/force-check
+    if (url.pathname === '/api/force-check' && req.method === 'POST') {
+      autoSenderState.forceCheck = true;
+      return new Response(JSON.stringify({ ok: true, message: 'Force check triggered' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     return new Response('Not Found', { status: 404 });
