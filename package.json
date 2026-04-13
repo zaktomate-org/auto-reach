@@ -9,6 +9,8 @@
     "restart": "pm2 restart cold-outreach",
     "delete": "pm2 delete cold-outreach",
     "logs": "pm2 logs cold-outreach",
+    "logs:pm2": "cat pm2-out.log",
+    "logs:tail": "tail -f pm2-out.log",
     "status": "pm2 status",
     "save": "pm2 save",
     "dev": "bun run main.ts"

@@ -206,9 +206,7 @@ async function autoSenderLoop() {
       const lead = await findPendingLead();
 
       if (!lead) {
-        const msg = `[${new Date().toISOString()}] No pending leads. Waiting ${config.autoSender.intervalMs / 60000} min...`;
-        pushLog(msg);
-        console.log(msg);
+        console.log(`[${new Date().toISOString()}] No pending leads. Waiting ${config.autoSender.intervalMs / 60000} min...`);
       } else {
         const type = lead.get('Type')?.trim();
         const template = (config.templates as Record<string, string>)[type || ''];
