@@ -34,5 +34,5 @@ Thumbs.db
 .env.local
 
 # PM2 logs
-pm2-out.log
-pm2-error.log
+pm2*.log
+*.log

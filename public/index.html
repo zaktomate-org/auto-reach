@@ -6,27 +6,34 @@
   <title>Cold Outreach CRM</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f5f5f5; padding: 2rem; }
-    h1 { margin-bottom: 1.5rem; font-size: 1.5rem; }
-    .container { max-width: 600px; margin: 0 auto; }
-    .card { background: #fff; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    label { display: block; margin-bottom: 0.25rem; font-weight: 600; font-size: 0.875rem; }
-    input, select { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem; }
-    button { width: 100%; padding: 0.625rem; background: #2563eb; color: #fff; border: none; border-radius: 4px; font-size: 0.875rem; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
-    button:disabled { background: #93c5fd; cursor: not-allowed; }
-    .msg { padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.875rem; display: none; }
-    .msg.ok { display: block; background: #dcfce7; color: #166534; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; padding: 1rem; }
+    .container { max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 1.25rem; margin-bottom: 1rem; }
+    .card { background: #fff; padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem; }
+    input, select { width: 100%; padding: 0.625rem; margin-bottom: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; background: #fff; }
+    input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    button { width: 100%; padding: 0.75rem; border: none; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #e5e7eb; color: #111827; }
+    .btn-secondary:hover { background: #d1d5db; }
+    .btn-green { background: #10b981; color: #fff; }
+    .btn-green:hover { background: #059669; }
+    .msg { padding: 0.5rem 0.75rem; border-radius: 6px; margin-top: 0.5rem; font-size: 0.875rem; display: none; }
+    .msg.ok { display: block; background: #d1fae5; color: #065f46; }
     .msg.err { display: block; background: #fee2e2; color: #991b1b; }
-    .row { display: flex; gap: 1rem; }
+    .row { display: flex; gap: 0.5rem; }
     .row > div { flex: 1; }
-    .hint { font-size: 0.75rem; color: #666; margin-top: -0.75rem; margin-bottom: 1rem; }
+    .hint { font-size: 0.75rem; color: #6b7280; margin-top: -0.5rem; margin-bottom: 0.75rem; }
+    .divider { height: 1px; background: #e5e7eb; margin: 1rem 0; }
+    #logsContent { background: #f9fafb; padding: 0.75rem; border-radius: 6px; font-size: 0.75rem; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>CRM Entry</h1>
-
     <div class="card">
       <form id="entryForm">
         <label>Company Name</label>
@@ -59,7 +66,7 @@
         <label>Message Sent</label>
         <select id="messageSent" required></select>
 
-        <button type="submit" id="submitBtn">Submit</button>
+        <button type="submit" class="btn-primary" id="submitBtn">Submit</button>
         <div class="msg" id="formMsg"></div>
       </form>
     </div>
@@ -69,19 +76,20 @@
       <form id="checkForm">
         <label>WhatsApp Number</label>
         <input type="text" id="checkNumber" required>
-        <button type="submit">Check</button>
+        <button type="submit" class="btn-secondary">Check</button>
         <div class="msg" id="checkMsg"></div>
       </form>
     </div>
 
     <div class="card">
       <h1>Auto-Sender</h1>
-      <button type="button" id="viewLogsBtn">View Last 5 Logs</button>
+      <button type="button" class="btn-secondary" id="viewLogsBtn">View Last 5 Logs</button>
       <div id="logsPanel" style="display:none; margin-top:0.75rem;">
-        <pre id="logsContent" style="background:#f9f9f9; padding:0.75rem; border-radius:4px; font-size:0.75rem; max-height:250px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;"></pre>
-        <button type="button" id="closeLogsBtn" style="margin-top:0.5rem; background:#6b7280;">Close</button>
+        <div id="logsContent"></div>
+        <button type="button" class="btn-secondary" id="closeLogsBtn" style="margin-top:0.5rem;">Close</button>
       </div>
-      <button type="button" id="forceCheckBtn" style="margin-top:0.75rem; background:#059669;">Force Check / Send Now</button>
+      <div class="divider"></div>
+      <button type="button" class="btn-green" id="forceCheckBtn">Force Check / Send Now</button>
       <div class="msg" id="forceMsg"></div>
     </div>
   </div>
@@ -118,7 +126,6 @@
         cfg.dropdowns.sentIn.forEach(v => sentIn.appendChild(new Option(v, v)));
         cfg.dropdowns.messageSent.forEach(v => messageSent.appendChild(new Option(v, v)));
 
-        // Restore persisted selections
         const saved = JSON.parse(localStorage.getItem('crm-selections') || '{}');
         if (saved.type) type.value = saved.type;
         if (saved.sentBy) sentBy.value = saved.sentBy;
@@ -199,11 +206,7 @@
       const res = await fetch('/api/auto-logs');
       const logs = await res.json();
       const content = document.getElementById('logsContent');
-      if (logs.length === 0) {
-        content.textContent = 'No logs yet.';
-      } else {
-        content.textContent = logs.join('\n');
-      }
+      content.textContent = logs.length ? logs.join('\n') : 'No logs yet.';
       document.getElementById('logsPanel').style.display = 'block';
     });
 
@@ -216,7 +219,7 @@
       const btn = document.getElementById('forceCheckBtn');
       btn.disabled = true;
       btn.textContent = 'Checking...';
-      showMsg('forceMsg', 'Triggered force check. Check back in a moment.', true);
+      showMsg('forceMsg', 'Triggered force check.', true);
       await fetch('/api/force-check', { method: 'POST' });
       setTimeout(() => {
         btn.disabled = false;
