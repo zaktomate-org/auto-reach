@@ -236,7 +236,7 @@ async function autoSenderLoop() {
 
 // ── HTTP Server (CRM Frontend + API) ─────────────────────
 const server = Bun.serve({
-  port: 3000,
+  port: config.port || 3000,
   async fetch(req) {
     const url = new URL(req.url);
 
