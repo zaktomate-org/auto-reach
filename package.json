@@ -3,8 +3,19 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "pm2 start ecosystem.config.js",
+    "stop": "pm2 stop cold-outreach",
+    "restart": "pm2 restart cold-outreach",
+    "delete": "pm2 delete cold-outreach",
+    "logs": "pm2 logs cold-outreach",
+    "status": "pm2 status",
+    "save": "pm2 save",
+    "dev": "bun run main.ts"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "pm2": "^6.0.14"
   },
   "peerDependencies": {
     "typescript": "^5"

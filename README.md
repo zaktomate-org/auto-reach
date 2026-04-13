@@ -110,8 +110,31 @@ bun run main.ts
 
 Opens at `http://localhost:3000`
 
-- **Entry Form** — Submit new leads to the spreadsheet
-- **Number Checker** — Check if a WhatsApp number exists in the CRM
+#### Running in the background with PM2
+
+The project includes an `ecosystem.config.js` pre-configured for `main.ts`.
+
+**First-time PM2 setup:**
+```bash
+# Generate systemd startup script (run once)
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u shoyeb --hp /home/shoyeb
+```
+
+**Start the CRM in background:**
+```bash
+bun run start
+```
+
+**Useful commands:**
+```bash
+bun run status     # Check status
+bun run logs       # View logs
+bun run restart    # Restart
+bun run stop       # Stop
+bun run delete     # Remove from PM2
+bun run save       # Save process list for reboot recovery
+bun run dev        # Run directly (foreground, no PM2)
+```
 
 When `autoSender.enabled` is `true`, the auto-sender runs in the background alongside the server:
 1. Every `intervalMs`, searches for a row where `Message Sent = "no"` AND `Sent by = <configured user>`
