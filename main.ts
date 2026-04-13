@@ -180,7 +180,11 @@ async function autoSenderLoop() {
     return;
   }
 
-  console.log(`Auto-sender enabled. Watching for leads assigned to "${config.autoSender.sentBy}".`);
+  if (config.autoSender.ignoreSentByFilter) {
+    console.log('Auto-sender enabled. Watching for all leads with Message Sent = "no".');
+  } else {
+    console.log(`Auto-sender enabled. Watching for leads assigned to "${config.autoSender.sentBy}".`);
+  }
 
   while (true) {
     try {
