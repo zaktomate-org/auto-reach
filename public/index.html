@@ -11,8 +11,9 @@
     h1 { font-size: 1.25rem; margin-bottom: 1rem; }
     .card { background: #fff; padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
     label { display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem; }
-    input, select { width: 100%; padding: 0.625rem; margin-bottom: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; background: #fff; }
-    input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    input, select, textarea { width: 100%; padding: 0.625rem; margin-bottom: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; background: #fff; }
+    textarea { min-height: 100px; font-size: 0.8rem; resize: vertical; line-height: 1.4; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
     button { width: 100%; padding: 0.75rem; border: none; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #3b82f6; color: #fff; }
@@ -29,74 +30,107 @@
     .hint { font-size: 0.75rem; color: #6b7280; margin-top: -0.5rem; margin-bottom: 0.75rem; }
     .divider { height: 1px; background: #e5e7eb; margin: 1rem 0; }
     #logsContent { background: #f9fafb; padding: 0.75rem; border-radius: 6px; font-size: 0.75rem; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+
+    @media (min-width: 900px) {
+      body { padding: 1rem; overflow: hidden; }
+      .container { max-width: 100%; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1rem; height: calc(100vh - 2rem); }
+      .left-panel .card { margin-bottom: 0; display: flex; flex-direction: column; height: 100%; }
+      .left-panel h1 { font-size: 1.25rem; margin-bottom: 0.75rem; }
+      .left-panel form { display: flex; flex-direction: column; flex: 1; }
+      .left-panel .form-fields { display: flex; flex-direction: column; flex: 1; justify-content: space-evenly; }
+      .left-panel .form-group { display: flex; flex-direction: column; }
+      .left-panel label { margin-bottom: 0.25rem; font-size: 0.85rem; }
+      .left-panel input, .left-panel select { padding: 0.625rem; font-size: 1rem; }
+      .left-panel .row { gap: 0.5rem; }
+      .left-panel .hint { margin: 0; font-size: 0.75rem; }
+      .left-panel button { padding: 0.625rem; font-size: 0.9rem; margin-bottom: 0.75rem; }
+      .left-panel .msg { margin-top: 0.25rem; margin-bottom: 0; font-size: 0.85rem; }
+      .right-panel { overflow-y: auto; padding-right: 0.5rem; }
+      .right-panel::-webkit-scrollbar { width: 6px; }
+      .right-panel::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>CRM Entry</h1>
-    <div class="card">
-      <form id="entryForm">
-        <label>Company Name</label>
-        <input type="text" id="company" required>
-
-        <label>WhatsApp Number</label>
-        <input type="text" id="whatsapp" required>
-
-        <label>Type</label>
-        <select id="type" required></select>
-
-        <label>Website URL</label>
-        <input type="text" id="website" placeholder="https://example.com or example.com">
-
-        <label>Facebook Page URL</label>
-        <input type="text" id="facebook" placeholder="https://facebook.com/page or facebook.com/page">
-        <p class="hint">Provide either Website or Facebook URL</p>
-
-        <div class="row">
-          <div>
-            <label>Sent by</label>
-            <select id="sentBy" required></select>
+    <div class="left-panel">
+      <div class="card">
+        <h1>CRM Entry</h1>
+        <form id="entryForm">
+          <div class="form-fields">
+            <div class="form-group">
+              <label>Company Name</label>
+              <input type="text" id="company" required>
+            </div>
+            <div class="form-group">
+              <label>WhatsApp Number</label>
+              <input type="text" id="whatsapp" required>
+            </div>
+            <div class="form-group">
+              <label>Type</label>
+              <select id="type" required></select>
+            </div>
+            <div class="form-group">
+              <label>Website URL</label>
+              <input type="text" id="website" placeholder="https://example.com or example.com">
+            </div>
+            <div class="form-group">
+              <label>Facebook Page URL</label>
+              <input type="text" id="facebook" placeholder="https://facebook.com/page or facebook.com/page">
+              <p class="hint">Provide either Website or Facebook URL</p>
+            </div>
+            <div class="form-group">
+              <div class="row">
+                <div>
+                  <label>Sent by</label>
+                  <select id="sentBy" required></select>
+                </div>
+                <div>
+                  <label>Sent in</label>
+                  <select id="sentIn" required></select>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Message Sent</label>
+              <select id="messageSent" required></select>
+            </div>
           </div>
-          <div>
-            <label>Sent in</label>
-            <select id="sentIn" required></select>
-          </div>
-        </div>
 
-        <label>Message Sent</label>
-        <select id="messageSent" required></select>
-
-        <button type="submit" class="btn-primary" id="submitBtn">Submit</button>
-        <div class="msg" id="formMsg"></div>
-      </form>
-    </div>
-
-    <div class="card">
-      <h1>Number Checker</h1>
-      <form id="checkForm">
-        <label>WhatsApp Number</label>
-        <input type="text" id="checkNumber" required>
-        <button type="submit" class="btn-secondary">Check</button>
-        <div class="msg" id="checkMsg"></div>
-      </form>
-    </div>
-
-    <div class="card">
-      <h1>Auto-Sender</h1>
-      <button type="button" class="btn-secondary" id="viewLogsBtn">View Last 5 Logs</button>
-      <div id="logsPanel" style="display:none; margin-top:0.75rem;">
-        <div id="logsContent"></div>
-        <button type="button" class="btn-secondary" id="closeLogsBtn" style="margin-top:0.5rem;">Close</button>
+          <button type="submit" class="btn-primary" id="submitBtn">Submit</button>
+          <div class="msg" id="formMsg"></div>
+        </form>
       </div>
-      <div class="divider"></div>
-      <button type="button" class="btn-green" id="forceCheckBtn">Force Check / Send Now</button>
-      <div class="msg" id="forceMsg"></div>
     </div>
 
-    <div class="card">
-      <h1>Message Templates</h1>
-      <div id="templatesContainer"></div>
-      <div class="msg" id="templateMsg"></div>
+    <div class="right-panel">
+      <div class="card">
+        <h1>Number Checker</h1>
+        <form id="checkForm">
+          <label>WhatsApp Number</label>
+          <input type="text" id="checkNumber" required>
+          <button type="submit" class="btn-secondary">Check</button>
+          <div class="msg" id="checkMsg"></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h1>Auto-Sender</h1>
+        <button type="button" class="btn-secondary" id="viewLogsBtn">View Last 5 Logs</button>
+        <div id="logsPanel" style="display:none; margin-top:0.75rem;">
+          <div id="logsContent"></div>
+          <button type="button" class="btn-secondary" id="closeLogsBtn" style="margin-top:0.5rem;">Close</button>
+        </div>
+        <div class="divider"></div>
+        <button type="button" class="btn-green" id="forceCheckBtn">Force Check / Send Now</button>
+        <div class="msg" id="forceMsg"></div>
+      </div>
+
+      <div class="card">
+        <h1>Message Templates</h1>
+        <div id="templatesContainer"></div>
+        <div class="msg" id="templateMsg"></div>
+      </div>
     </div>
   </div>
 
@@ -245,7 +279,6 @@
         const textarea = document.createElement('textarea');
         textarea.value = value;
         textarea.dataset.type = key;
-        textarea.style.cssText = 'width:100%; min-height:100px; padding:0.5rem; margin-bottom:0.75rem; border:1px solid #d1d5db; border-radius:6px; font-size:0.8rem; font-family:inherit; resize:vertical; line-height:1.4;';
         container.appendChild(label);
         container.appendChild(textarea);
       });
