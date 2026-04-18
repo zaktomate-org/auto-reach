@@ -29,14 +29,14 @@ bun.lock
 .DS_Store
 Thumbs.db
 
-# Env
+# Env (keep secrets local)
 .env
 .env.local
 
 # PM2 logs
 pm2*.log
 *.log
- 
+
 temp*
 
 sheet-structure.txt

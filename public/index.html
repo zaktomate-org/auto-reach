@@ -121,6 +121,7 @@
 
       <div class="card">
         <h1>Auto-Sender</h1>
+        <div id="autoStatus" style="margin-bottom: 0.75rem; font-size: 0.85rem;"></div>
         <button type="button" class="btn-secondary" id="viewLogsBtn">View Last 5 Logs</button>
         <div id="logsPanel" style="display:none; margin-top:0.75rem;">
           <div id="logsContent"></div>
@@ -129,6 +130,13 @@
         <div class="divider"></div>
         <button type="button" class="btn-green" id="forceCheckBtn">Force Check / Send Now</button>
         <div class="msg" id="forceMsg"></div>
+      </div>
+
+      <div class="card">
+        <h1>Daily Stats</h1>
+        <div id="dailyStats" style="font-size: 0.85rem; margin-bottom: 0.5rem;"></div>
+        <button type="button" class="btn-secondary" id="resetDailyBtn">Reset Counter</button>
+        <div class="msg" id="dailyMsg"></div>
       </div>
 
       <div class="card">
@@ -327,6 +335,38 @@
         saveBtn.textContent = 'Save Templates';
       });
       container.appendChild(saveBtn);
+    })();
+
+    // Auto-Sender Status
+    (async function updateAutoStatus() {
+      async function refresh() {
+        const res = await fetch('/api/auto-status');
+        const status = await res.json();
+        
+        let statusText = '';
+        if (status.allowed) {
+          statusText = '<span style="color: #10b981;">Active</span>';
+        } else {
+          statusText = `<span style="color: #f97316;">Paused: ${status.reason}</span>`;
+        }
+        
+        const dailyText = status.dailyMax 
+          ? ` | Today: ${status.dailySent}/${status.dailyMax}` 
+          : ` | Today: ${status.dailySent}`;
+        
+        document.getElementById('autoStatus').innerHTML = 'Status: ' + statusText + dailyText;
+        
+        const statsEl = document.getElementById('dailyStats');
+        if (status.dailyMax) {
+          const pct = Math.round((status.dailySent / status.dailyMax) * 100);
+          statsEl.innerHTML = `Sent: ${status.dailySent} / ${status.dailyMax} (${pct}%)`;
+        } else {
+          statsEl.innerHTML = `Sent: ${status.dailySent} (unlimited)`;
+        }
+      }
+      
+      await refresh();
+      setInterval(refresh, 10000);
     })();
 
     // CSV Importer

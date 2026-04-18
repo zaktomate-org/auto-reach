@@ -6,6 +6,8 @@ import creds from './account.json';
 import config from './config.json';
 import { writeFile } from 'fs/promises';
 
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
+
 const auth = new JWT({
   email: creds.client_email,
   key: creds.private_key,
@@ -38,7 +40,7 @@ function buildMessage(template: string, row: GoogleSpreadsheetRow): string {
 
 // ── Sheet operations ─────────────────────────────────────
 async function getDoc() {
-  const doc = new GoogleSpreadsheet(config.spreadsheetId, auth);
+  const doc = new GoogleSpreadsheet(SPREADSHEET_ID, auth);
   await doc.loadInfo();
   return doc;
 }
@@ -180,7 +182,103 @@ const autoSenderState = {
   logs: [] as string[],
   forceCheck: false,
   waitUntil: null as Promise<void> | null,
+  dailyMessageCount: 0,
+  lastResetDate: new Date().toDateString(),
 };
+
+function resetDailyCount() {
+  autoSenderState.dailyMessageCount = 0;
+  autoSenderState.lastResetDate = new Date().toDateString();
+}
+
+function checkMidnightReset() {
+  const today = new Date().toDateString();
+  if (autoSenderState.lastResetDate !== today) {
+    resetDailyCount();
+    pushLog('Daily message count reset at midnight.');
+    console.log('Daily message count reset at midnight.');
+  }
+}
+
+function getRandomInterval(): number {
+  const as = config.autoSender;
+  const minMs = (as.intervalMinMs ?? 8) * 60 * 1000;
+  const maxMs = (as.intervalMaxMs ?? 12) * 60 * 1000;
+  return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
+
+function isWithinSchedule(schedules: { start: string; end: string }[]): boolean {
+  if (schedules.length === 0) return true;
+
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  for (const schedule of schedules) {
+    const [sh, sm] = schedule.start.split(':').map(Number);
+    const [eh, em] = schedule.end.split(':').map(Number);
+    const startMinutes = (sh ?? 0) * 60 + (sm ?? 0);
+    const endMinutes = (eh ?? 0) * 60 + (em ?? 0);
+
+    if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function validateNoOverlap(schedules: { start: string; end: string }[]): string | null {
+  const events: { start: number; end: number; index: number }[] = [];
+
+  for (let i = 0; i < schedules.length; i++) {
+    const partsS = schedules[i].start.split(':');
+    const partsE = schedules[i].end.split(':');
+    const sh = Number(partsS[0] ?? '0');
+    const sm = Number(partsS[1] ?? '0');
+    const eh = Number(partsE[0] ?? '0');
+    const em = Number(partsE[1] ?? '0');
+    const startMinutes = sh * 60 + sm;
+    const endMinutes = eh * 60 + em;
+
+    if (startMinutes >= endMinutes) {
+      return `Schedule ${i + 1}: End time must be after start time`;
+    }
+
+    events.push({ start: startMinutes, end: endMinutes, index: i });
+  }
+
+  events.sort((a, b) => a.start - b.start);
+
+  for (let i = 1; i < events.length; i++) {
+    const prev = events[i - 1];
+    const curr = events[i];
+    if (prev && curr && curr.start < prev.end) {
+      return `Schedules ${prev.index + 1} and ${curr.index + 1} overlap`;
+    }
+  }
+
+  return null;
+}
+
+function canSendAuto(): { allowed: boolean; reason: string } {
+  const as = config.autoSender;
+
+  checkMidnightReset();
+
+  if (as.maxMessagesPerDay !== null && as.maxMessagesPerDay > 0) {
+    if (autoSenderState.dailyMessageCount >= as.maxMessagesPerDay) {
+      return { allowed: false, reason: 'Daily message limit reached' };
+    }
+  }
+
+  const schedules = as.schedules || [];
+  if (schedules.length > 0) {
+    if (!isWithinSchedule(schedules)) {
+      return { allowed: false, reason: 'Outside scheduled hours' };
+    }
+  }
+
+  return { allowed: true, reason: '' };
+}
 
 function pushLog(msg: string) {
   autoSenderState.logs.push(msg);
@@ -203,7 +301,8 @@ function clearPythonBuffer() {
 }
 
 function pushPythonLine(line: string, isStderr = false) {
-  const prefix = new Date().toISOString().split('T')[1].slice(0, -1);
+  const iso = new Date().toISOString();
+  const prefix = iso.includes('T') ? iso.split('T')[1]?.slice(0, -1) ?? '00:00' : '00:00';
   const formatted = isStderr ? `[${prefix}] [stderr] ${line}` : `[${prefix}] ${line}`;
 
   if (!pythonBuffer) {
@@ -322,10 +421,15 @@ async function autoSenderLoop() {
 
   while (true) {
     try {
+      const canSend = canSendAuto();
       const lead = await findPendingLead();
 
       if (!lead) {
-        console.log(`[${new Date().toISOString()}] No pending leads. Waiting ${config.autoSender.intervalMs / 60000} min...`);
+        const intervalMin = getRandomInterval();
+        console.log(`[${new Date().toISOString()}] No pending leads. Waiting ${intervalMin / 60000} min...`);
+      } else if (!canSend.allowed) {
+        const intervalMin = getRandomInterval();
+        console.log(`[${new Date().toISOString()}] Skipping: ${canSend.reason}. Waiting ${intervalMin / 60000} min...`);
       } else {
         const type = lead.get('Type')?.trim();
         const template = (config.templates as Record<string, string>)[type || ''];
@@ -355,7 +459,9 @@ async function autoSenderLoop() {
                 await sendWhatsApp(whatsapp, message);
                 await markMessageSent(lead);
 
-                const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes, Date set for ${companyName}`;
+                autoSenderState.dailyMessageCount++;
+
+                const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes, Date set for ${companyName} (${autoSenderState.dailyMessageCount} today)`;
                 pushLog(okMsg);
                 console.log(okMsg);
                 sent = true;
@@ -377,10 +483,11 @@ async function autoSenderLoop() {
 
     // Wait for interval or force check signal
     await new Promise<void>((resolve) => {
+      const intervalMs = getRandomInterval();
       const timer = setTimeout(() => {
         autoSenderState.waitUntil = null;
         resolve();
-      }, config.autoSender.intervalMs);
+      }, intervalMs);
 
       autoSenderState.waitUntil = new Promise<void>((res) => {
         const check = setInterval(() => {
@@ -585,6 +692,70 @@ const server = Bun.serve({
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
         },
+      });
+    }
+
+    // GET /api/schedules
+    if (url.pathname === '/api/schedules' && req.method === 'GET') {
+      return new Response(JSON.stringify(config.autoSender.schedules || []), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /api/schedules
+    if (url.pathname === '/api/schedules' && req.method === 'POST') {
+      const body = await req.json() as { start: string; end: string }[];
+      if (!Array.isArray(body)) {
+        return new Response(JSON.stringify({ error: 'Schedules must be an array' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const error = validateNoOverlap(body);
+      if (error) {
+        return new Response(JSON.stringify({ error }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      config.autoSender.schedules = body;
+      await writeFile('./config.json', JSON.stringify(config, null, 2));
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /api/daily-stats
+    if (url.pathname === '/api/daily-stats' && req.method === 'GET') {
+      checkMidnightReset();
+      return new Response(JSON.stringify({
+        sent: autoSenderState.dailyMessageCount,
+        max: config.autoSender.maxMessagesPerDay,
+        date: autoSenderState.lastResetDate,
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /api/daily-stats/reset
+    if (url.pathname === '/api/daily-stats/reset' && req.method === 'POST') {
+      resetDailyCount();
+      return new Response(JSON.stringify({ ok: true, sent: 0 }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /api/auto-status
+    if (url.pathname === '/api/auto-status' && req.method === 'GET') {
+      const canSend = canSendAuto();
+      return new Response(JSON.stringify({
+        allowed: canSend.allowed,
+        reason: canSend.reason,
+        dailySent: autoSenderState.dailyMessageCount,
+        dailyMax: config.autoSender.maxMessagesPerDay,
+        schedules: config.autoSender.schedules || [],
+      }), {
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 

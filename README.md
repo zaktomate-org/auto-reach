@@ -6,7 +6,9 @@ A cold outreach CRM built with Bun, Playwright, and Google Sheets API. Automates
 
 - **CRM Entry Form** — Add leads (company, WhatsApp number, type, URLs, team member, time slot, message status)
 - **Number Checker** — Verify if a WhatsApp number already exists in the spreadsheet
-- **Auto-Sender** — Background loop that checks every 10 min for un-messaged leads assigned to a specific team member, sends a templated WhatsApp message via Meta Business Suite, and updates the CRM with the date
+- **Auto-Sender** — Background loop that checks for un-messaged leads, sends templated WhatsApp messages via Meta Business Suite, and updates the CRM with the date
+- **Scheduling** — Configure active hours for the auto-sender
+- **Daily Limits** — Set maximum messages per day
 - **CSV Importer** — Run a Python script to import leads from CSV files directly into the CRM
 - **WhatsApp Automation** — Headless Chrome automation that navigates Meta Business Suite to compose and send WhatsApp messages
 - **Session Management** — Persistent Playwright auth state to avoid repeated Facebook logins
@@ -53,13 +55,21 @@ bun install
    - Open `account.json`, copy the `client_email` value (e.g., `my-account@project.iam.gserviceaccount.com`)
    - Open your Google Sheet → click **Share** → paste the email → give it **Editor** access
 
-### 3. Configure the spreadsheet
+### 3. Configure environment
 
-Copy `config.example.json` to `config.json` and fill in:
+Create a `.env` file in the project root:
+
+```env
+SPREADSHEET_ID=your-spreadsheet-id
+```
+
+### 4. Configure the app (`config.json`)
+
+Create or edit `config.json`:
 
 ```json
 {
-  "spreadsheetId": "your-spreadsheet-id",
+  "port": 4292,
   "dropdowns": {
     "type": ["Ed-Tech", "F-Commerce", "Agency"],
     "sentBy": ["Abid", "Fahim", "Shoyeb"],
@@ -69,7 +79,13 @@ Copy `config.example.json` to `config.json` and fill in:
   "autoSender": {
     "enabled": false,
     "sentBy": "Shoyeb",
-    "intervalMs": 600000
+    "ignoreSentByFilter": false,
+    "intervalMinMs": 8,
+    "intervalMaxMs": 12,
+    "maxMessagesPerDay": null,
+    "schedules": [
+      { "start": "08:00", "end": "21:00" }
+    ]
   },
   "templates": {
     "Ed-Tech": "...",
@@ -91,20 +107,22 @@ Copy `config.example.json` to `config.json` and fill in:
 }
 ```
 
+- **`autoSender.enabled`** — set `true` to activate the auto-sender loop
+- **`autoSender.sentBy`** — which team member to watch for (must match `Sent by` column values)
+- **`autoSender.ignoreSentByFilter`** — set `true` to match any row where `Message Sent = "no"` regardless of who it's assigned to
+- **`autoSender.intervalMinMs`** — minimum interval between checks in minutes (default: 8)
+- **`autoSender.intervalMaxMs`** — maximum interval between checks in minutes (default: 12)
+- **`autoSender.maxMessagesPerDay`** — maximum messages to send per day (null for unlimited)
+- **`autoSender.schedules`** — array of `{start, end}` time pairs (e.g., "08:00", "21:00"). Leave empty for always active
+- **`templates`** — one message template per type. Placeholders: `{{Company_Name}}`, `{{Your_Name}}`, `{{Facebook_Page_Name}}`
+- **`banglaNames`** — maps English names to Bangla for the F-Commerce template
 - **`pythonScript.enabled`** — set `true` to enable the CSV importer feature
 - **`pythonScript.projectPath`** — absolute path to the Python project folder (uses `uv`)
 - **`pythonScript.csvFolderPath`** — path to the folder containing CSV files to import
 - **`pythonScript.type`** — lead type to use when importing (e.g., "lead", "Ed-Tech", "Agency")
 - **`pythonScript.sentBy`** — team member name to assign imported leads to
 
-- **`autoSender.enabled`** — set `true` to activate the auto-sender loop
-- **`autoSender.sentBy`** — which team member to watch for (must match `Sent by` column values)
-- **`autoSender.ignoreSentByFilter`** — set `true` to match any row where `Message Sent = "no"` regardless of who it's assigned to. When `false` (default), only matches rows assigned to `sentBy`
-- **`autoSender.intervalMs`** — check interval in ms (default 600000 = 10 min). Timer starts **after** a send completes
-- **`templates`** — one message template per type. Placeholders: `{{Company_Name}}`, `{{Your_Name}}`, `{{Facebook_Page_Name}}`
-- **`banglaNames`** — maps English names to Bangla for the F-Commerce template
-
-### 4. Generate Playwright auth state
+### 5. Generate Playwright auth state
 
 ```bash
 bun run login.ts
@@ -151,11 +169,14 @@ bun run dev        # Run directly (foreground, no PM2)
 ```
 
 When `autoSender.enabled` is `true`, the auto-sender runs in the background alongside the server:
-1. Every `intervalMs`, searches for a row where `Message Sent = "no"` AND `Sent by = <configured user>`
-2. Builds the message from the template matching the lead's type
-3. Sends the WhatsApp message via headless Chrome
-4. Updates the CRM: sets `Message Sent = "yes"` and `Date = today`
-5. If sending fails, retries every 60 seconds until successful before waiting for the next interval
+1. Every random interval (between `intervalMinMs` and `intervalMaxMs`), searches for a row where `Message Sent = "no"` AND `Sent by = <configured user>`
+2. Only runs if within scheduled hours (if configured)
+3. Stops when daily message limit is reached (if configured)
+4. Builds the message from the template matching the lead's type
+5. Sends the WhatsApp message via headless Chrome
+6. Updates the CRM: sets `Message Sent = "yes"` and `Date = today`
+7. If sending fails, retries every 60 seconds until successful before waiting for the next interval
+8. **Force Check** bypasses all schedule/daily limit restrictions
 
 ### CSV Importer
 
@@ -207,8 +228,8 @@ Flow: Opens Meta Business Suite → navigates to WhatsApp inbox → composes and
 cold-outreach/
 ├── account.json              # Google service account credentials (gitignored)
 ├── auth.json                 # Playwright auth state (gitignored)
-├── config.json               # Spreadsheet ID, templates, auto-sender config (gitignored)
-├── config.example.json       # Template for config.json
+├── .env                      # Environment variables (gitignored)
+├── config.json               # App config (gitignored)
 ├── package.json
 ├── tsconfig.json
 ├── .gitignore
