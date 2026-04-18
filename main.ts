@@ -57,9 +57,32 @@ async function loadNumbers(): Promise<string[]> {
   return numbers;
 }
 
+function formatDateTimeForSheet(date: Date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function parseSentIn(sentIn: string | undefined): string {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  if (!sentIn) return formatDateTimeForSheet();
+
+  const trimmed = sentIn.trim();
+  if (/^\d{1,2}:\d{2}\s*(am|pm)?$/i.test(trimmed)) {
+    return `${today} ${trimmed}`;
+  }
+  return formatDateTimeForSheet();
+}
+
 async function addEntry(data: Record<string, string>) {
   const doc = await getDoc();
   const sheet = doc.sheetsByIndex[0];
+  const addedIn = parseSentIn(data.sentIn);
   await sheet.addRow({
     'Company Name': data.company,
     'WhatsApp': data.whatsapp,
@@ -67,11 +90,11 @@ async function addEntry(data: Record<string, string>) {
     'Website URL': data.website,
     'Facebook Page URL': data.facebook,
     'Sent by': data.sentBy,
-    'Sent in': data.sentIn,
+    'Added in': addedIn,
     'Message Sent': data.messageSent,
     'Response': '',
     'Follow Up': '0',
-    'Date': '',
+    'Video Sent': 'no',
   });
 }
 
@@ -90,9 +113,8 @@ async function findPendingLead(): Promise<GoogleSpreadsheetRow | null> {
 }
 
 async function markMessageSent(row: GoogleSpreadsheetRow) {
-  const today = new Date().toLocaleDateString('en-GB');
   row.set('Message Sent', 'yes');
-  row.set('Date', today);
+  row.set('Sent in', formatDateTimeForSheet());
   await row.save();
 }
 

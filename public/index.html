@@ -85,16 +85,8 @@
               <p class="hint">Provide either Website or Facebook URL</p>
             </div>
             <div class="form-group">
-              <div class="row">
-                <div>
-                  <label>Sent by</label>
-                  <select id="sentBy" required></select>
-                </div>
-                <div>
-                  <label>Sent in</label>
-                  <select id="sentIn" required></select>
-                </div>
-              </div>
+              <label>Sent by</label>
+              <select id="sentBy" required></select>
             </div>
             <div class="form-group">
               <label>Message Sent</label>
@@ -183,21 +175,18 @@
       .then(cfg => {
         const type = document.getElementById('type');
         const sentBy = document.getElementById('sentBy');
-        const sentIn = document.getElementById('sentIn');
         const messageSent = document.getElementById('messageSent');
 
         cfg.dropdowns.type.forEach(v => type.appendChild(new Option(v, v)));
         cfg.dropdowns.sentBy.forEach(v => sentBy.appendChild(new Option(v, v)));
-        cfg.dropdowns.sentIn.forEach(v => sentIn.appendChild(new Option(v, v)));
         cfg.dropdowns.messageSent.forEach(v => messageSent.appendChild(new Option(v, v)));
 
         const saved = JSON.parse(localStorage.getItem('crm-selections') || '{}');
         if (saved.type) type.value = saved.type;
         if (saved.sentBy) sentBy.value = saved.sentBy;
-        if (saved.sentIn) sentIn.value = saved.sentIn;
         if (saved.messageSent) messageSent.value = saved.messageSent;
 
-        [type, sentBy, sentIn, messageSent].forEach(el => {
+        [type, sentBy, messageSent].forEach(el => {
           el.addEventListener('change', persistSelections);
         });
       });
@@ -206,7 +195,6 @@
       const data = {
         type: document.getElementById('type').value,
         sentBy: document.getElementById('sentBy').value,
-        sentIn: document.getElementById('sentIn').value,
         messageSent: document.getElementById('messageSent').value,
       };
       localStorage.setItem('crm-selections', JSON.stringify(data));
@@ -225,7 +213,6 @@
       const website = cleanUrl(document.getElementById('website').value.trim());
       const facebook = document.getElementById('facebook').value.trim();
       const sentBy = document.getElementById('sentBy').value;
-      const sentIn = document.getElementById('sentIn').value;
       const messageSent = document.getElementById('messageSent').value;
 
       if (!website && !facebook) {
@@ -238,7 +225,7 @@
       const res = await fetch('/api/entry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company, whatsapp, type, website, facebook, sentBy, sentIn, messageSent }),
+        body: JSON.stringify({ company, whatsapp, type, website, facebook, sentBy, messageSent }),
       });
 
       const data = await res.json();

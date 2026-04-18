@@ -4,9 +4,9 @@ A cold outreach CRM built with Bun, Playwright, and Google Sheets API. Automates
 
 ## Features
 
-- **CRM Entry Form** — Add leads (company, WhatsApp number, type, URLs, team member, time slot, message status)
+- **CRM Entry Form** — Add leads (company, WhatsApp number, type, URLs, team member, message status)
 - **Number Checker** — Verify if a WhatsApp number already exists in the spreadsheet
-- **Auto-Sender** — Background loop that checks for un-messaged leads, sends templated WhatsApp messages via Meta Business Suite, and updates the CRM with the date
+- **Auto-Sender** — Background loop that checks for un-messaged leads, sends templated WhatsApp messages via Meta Business Suite, and updates the CRM with sent timestamp
 - **Scheduling** — Configure active hours for the auto-sender
 - **Daily Limits** — Set maximum messages per day
 - **CSV Importer** — Run a Python script to import leads from CSV files directly into the CRM
@@ -52,8 +52,24 @@ bun install
    - Rename the downloaded file to `account.json`
    - Place it in the project root
 7. **Share your spreadsheet** with the service account
-   - Open `account.json`, copy the `client_email` value (e.g., `my-account@project.iam.gserviceaccount.com`)
-   - Open your Google Sheet → click **Share** → paste the email → give it **Editor** access
+    - Open `account.json`, copy the `client_email` value (e.g., `my-account@project.iam.gserviceaccount.com`)
+    - Open your Google Sheet → click **Share** → paste the email → give it **Editor** access
+
+### Google Sheet Column Headers
+
+Your spreadsheet must have these columns (in any order):
+- `Company Name`
+- `WhatsApp`
+- `Type`
+- `Website URL`
+- `Facebook Page URL`
+- `Sent by`
+- `Added in` — auto-populated when adding entries via API or frontend
+- `Message Sent` — "yes" or "no"
+- `Response`
+- `Follow Up`
+- `Sent in` — auto-populated when auto-sender sends a message
+- `Video Sent` — "no" or "yes"
 
 ### 3. Configure environment
 
@@ -73,7 +89,6 @@ Create or edit `config.json`:
   "dropdowns": {
     "type": ["Ed-Tech", "F-Commerce", "Agency"],
     "sentBy": ["Abid", "Fahim", "Shoyeb"],
-    "sentIn": ["Morning(5-12)", "Noon(12-20)", "Night(20-5)"],
     "messageSent": ["yes", "no"]
   },
   "autoSender": {
@@ -174,7 +189,7 @@ When `autoSender.enabled` is `true`, the auto-sender runs in the background alon
 3. Stops when daily message limit is reached (if configured)
 4. Builds the message from the template matching the lead's type
 5. Sends the WhatsApp message via headless Chrome
-6. Updates the CRM: sets `Message Sent = "yes"` and `Date = today`
+6. Updates the CRM: sets `Message Sent = "yes"` and `Sent in = YYYY-MM-DD HH:mm`
 7. If sending fails, retries every 60 seconds until successful before waiting for the next interval
 8. **Force Check** bypasses all schedule/daily limit restrictions
 
