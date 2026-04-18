@@ -58,6 +58,7 @@ bun install
 ### Google Sheet Column Headers
 
 Your spreadsheet must have these columns (in any order):
+
 - `Company Name`
 - `WhatsApp`
 - `Type`
@@ -162,17 +163,20 @@ Opens at `http://localhost:4292` (or the port specified in `config.json`)
 The project includes an `ecosystem.config.js` pre-configured for `main.ts`.
 
 **First-time PM2 setup:**
+
 ```bash
 # Generate systemd startup script (run once)
 sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u shoyeb --hp /home/shoyeb
 ```
 
 **Start the CRM in background:**
+
 ```bash
 bun run start
 ```
 
 **Useful commands:**
+
 ```bash
 bun run status     # Check status
 bun run logs       # View logs
@@ -184,6 +188,7 @@ bun run dev        # Run directly (foreground, no PM2)
 ```
 
 When `autoSender.enabled` is `true`, the auto-sender runs in the background alongside the server:
+
 1. Every random interval (between `intervalMinMs` and `intervalMaxMs`), searches for a row where `Message Sent = "no"` AND `Sent by = <configured user>`
 2. Only runs if within scheduled hours (if configured)
 3. Stops when daily message limit is reached (if configured)
@@ -198,6 +203,7 @@ When `autoSender.enabled` is `true`, the auto-sender runs in the background alon
 The CSV Importer allows you to run a Python script to import leads from CSV files directly into the CRM.
 
 **Configuration** (in `config.json`):
+
 ```json
 "pythonScript": {
   "enabled": true,
@@ -209,6 +215,7 @@ The CSV Importer allows you to run a Python script to import leads from CSV file
 ```
 
 **Usage:**
+
 - Click **Run CSV Importer** in the frontend to start the import
 - View real-time output in the terminal panel
 - Click **Stop** to cancel the running process (any user viewing the page can stop it)
@@ -231,6 +238,7 @@ bun run automate.ts <number> <message>
 ```
 
 Example:
+
 ```bash
 bun run automate.ts 1533181574 "Hello, interested in our services"
 ```
@@ -244,7 +252,7 @@ cold-outreach/
 ├── account.json              # Google service account credentials (gitignored)
 ├── auth.json                 # Playwright auth state (gitignored)
 ├── .env                      # Environment variables (gitignored)
-├── config.json               # App config (gitignored)
+├── config.json               # App config
 ├── package.json
 ├── tsconfig.json
 ├── .gitignore
@@ -275,3 +283,4 @@ cold-outreach/
     ├── message-input.html
     └── send-message.html
 ```
+
