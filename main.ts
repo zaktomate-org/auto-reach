@@ -1,6 +1,7 @@
 import { GoogleSpreadsheet, GoogleSpreadsheetRow } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { chromium } from 'playwright';
+import { spawn } from 'child_process';
 import creds from './account.json';
 import config from './config.json';
 import { writeFile } from 'fs/promises';
@@ -186,6 +187,123 @@ function pushLog(msg: string) {
   if (autoSenderState.logs.length > 5) autoSenderState.logs.shift();
 }
 
+// ── Python Script Runner ───────────────────────────────────
+const MAX_BUFFER_LINES = 1000;
+
+let pythonProcess: ReturnType<typeof spawn> | null = null;
+let pythonBuffer: { lines: string[]; startedAt: number; finishedAt: number | null } | null = null;
+let pythonCleanupTimer: Timer | null = null;
+
+function clearPythonBuffer() {
+  pythonBuffer = null;
+  if (pythonCleanupTimer) {
+    clearTimeout(pythonCleanupTimer);
+    pythonCleanupTimer = null;
+  }
+}
+
+function pushPythonLine(line: string, isStderr = false) {
+  const prefix = new Date().toISOString().split('T')[1].slice(0, -1);
+  const formatted = isStderr ? `[${prefix}] [stderr] ${line}` : `[${prefix}] ${line}`;
+
+  if (!pythonBuffer) {
+    pythonBuffer = { lines: [], startedAt: Date.now(), finishedAt: null };
+  }
+
+  pythonBuffer.lines.push(formatted);
+
+  if (pythonBuffer.lines.length > MAX_BUFFER_LINES) {
+    pythonBuffer.lines = pythonBuffer.lines.slice(-MAX_BUFFER_LINES);
+  }
+}
+
+function startPythonScript(crmUrl: string) {
+  if (pythonProcess || pythonBuffer?.finishedAt === null) {
+    return { error: 'Process already running' };
+  }
+
+  const ps = config.pythonScript;
+  const projectPath = ps.projectPath;
+  const csvFolderPath = ps.csvFolderPath;
+  const type = ps.type || 'lead';
+  const sentBy = ps.sentBy || 'Shoyeb';
+
+  const cmd = `uv run --directory "${projectPath}" python -u main.py --path "${csvFolderPath}" --crm --url "${crmUrl}" --type "${type}" --sentby "${sentBy}"`;
+
+  clearPythonBuffer();
+  pushPythonLine(`> ${cmd}`);
+
+  pythonProcess = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+
+  if (!pythonBuffer) {
+    pythonBuffer = { lines: [], startedAt: Date.now(), finishedAt: null };
+  }
+
+  pythonProcess.stdout?.on('data', (data: Buffer) => {
+    const str = data.toString();
+    const lines = str.split('\n');
+    lines.forEach(line => {
+      if (line.trim()) pushPythonLine(line);
+    });
+  });
+
+  pythonProcess.stderr?.on('data', (data: Buffer) => {
+    const str = data.toString();
+    const lines = str.split('\n');
+    lines.forEach(line => {
+      if (line.trim()) pushPythonLine(line, true);
+    });
+  });
+
+  pythonProcess.on('close', (code) => {
+    const exitMsg = code === 0 ? 'Completed (exit code: 0)' : `Failed (exit code: ${code})`;
+    pushPythonLine(exitMsg);
+    if (pythonBuffer) {
+      pythonBuffer.finishedAt = Date.now();
+    }
+    pythonProcess = null;
+
+    pythonCleanupTimer = setTimeout(() => {
+      clearPythonBuffer();
+    }, 60000);
+  });
+
+  pythonProcess.on('error', (err) => {
+    pushPythonLine(`Error: ${err.message}`, true);
+    if (pythonBuffer) {
+      pythonBuffer.finishedAt = Date.now();
+    }
+    pythonProcess = null;
+  });
+
+  return { ok: true };
+}
+
+function stopPythonScript() {
+  if (!pythonProcess) {
+    return { error: 'No process running' };
+  }
+  pythonProcess.kill('SIGTERM');
+  pushPythonLine('Killed by user', true);
+  if (pythonBuffer) {
+    pythonBuffer.finishedAt = Date.now();
+  }
+  pythonProcess = null;
+  return { ok: true };
+}
+
+function getPythonStatus() {
+  const isRunning = pythonProcess !== null;
+  const hasBuffer = pythonBuffer !== null;
+  const isFinished = pythonBuffer?.finishedAt !== null;
+  return {
+    running: isRunning,
+    hasBuffer: hasBuffer && !isFinished,
+    persisted: hasBuffer && isFinished,
+    output: pythonBuffer?.lines || [],
+  };
+}
+
 // ── Auto-sender loop ─────────────────────────────────────
 async function autoSenderLoop() {
   if (!config.autoSender.enabled) {
@@ -282,6 +400,7 @@ async function autoSenderLoop() {
 // ── HTTP Server (CRM Frontend + API) ─────────────────────
 const server = Bun.serve({
   port: config.port || 3000,
+  idleTimeout: 255,
   async fetch(req) {
     const url = new URL(req.url);
 
@@ -366,6 +485,106 @@ const server = Bun.serve({
       return new Response(JSON.stringify({ error: 'Invalid templates' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /api/run-csv-importer/start
+    if (url.pathname === '/api/run-csv-importer/start' && req.method === 'POST') {
+      if (!config.pythonScript?.enabled) {
+        return new Response(JSON.stringify({ error: 'Python script is disabled' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const host = req.headers.get('host') || 'localhost:3000';
+      const protocol = host.includes('localhost') ? 'http' : 'https';
+      const crmUrl = `${protocol}://${host}`;
+      const result = startPythonScript(crmUrl);
+      return new Response(JSON.stringify(result), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /api/run-csv-importer/stop
+    if (url.pathname === '/api/run-csv-importer/stop' && req.method === 'POST') {
+      const result = stopPythonScript();
+      return new Response(JSON.stringify(result), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /api/run-csv-importer/status
+    if (url.pathname === '/api/run-csv-importer/status' && req.method === 'GET') {
+      return new Response(JSON.stringify(getPythonStatus()), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /api/run-csv-importer/stream (SSE)
+    if (url.pathname === '/api/run-csv-importer/stream' && req.method === 'GET') {
+      const stream = new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          const send = (data: string) => {
+            try {
+              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            } catch (e) {
+              // Controller closed
+            }
+          };
+
+          const status = getPythonStatus();
+
+          if (status.persisted && status.output.length > 0) {
+            send(JSON.stringify({ type: 'persisted', lines: status.output }));
+            controller.close();
+            return;
+          } else if (status.hasBuffer && status.output.length > 0) {
+            send(JSON.stringify({ type: 'buffer', lines: status.output }));
+          }
+
+          if (status.running) {
+            const sendLines = new Set<string>(status.output);
+            
+            const checkInterval = setInterval(() => {
+              const currentStatus = getPythonStatus();
+              
+              if (!currentStatus.running) {
+                clearInterval(checkInterval);
+                send(JSON.stringify({ type: 'done', exitCode: 0 }));
+                controller.close();
+                return;
+              }
+              
+              const newLines = currentStatus.output.filter(l => !sendLines.has(l));
+              newLines.forEach(l => {
+                sendLines.add(l);
+                send(JSON.stringify({ type: 'line', line: l }));
+              });
+            }, 500);
+
+            // Heartbeat to keep connection alive
+            const heartbeat = setInterval(() => {
+              send(JSON.stringify({ type: 'heartbeat' }));
+            }, 25000);
+
+            req.signal.addEventListener('abort', () => {
+              clearInterval(checkInterval);
+              clearInterval(heartbeat);
+              controller.close();
+            });
+          } else {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
       });
     }
 

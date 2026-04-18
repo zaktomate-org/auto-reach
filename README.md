@@ -7,6 +7,7 @@ A cold outreach CRM built with Bun, Playwright, and Google Sheets API. Automates
 - **CRM Entry Form** — Add leads (company, WhatsApp number, type, URLs, team member, time slot, message status)
 - **Number Checker** — Verify if a WhatsApp number already exists in the spreadsheet
 - **Auto-Sender** — Background loop that checks every 10 min for un-messaged leads assigned to a specific team member, sends a templated WhatsApp message via Meta Business Suite, and updates the CRM with the date
+- **CSV Importer** — Run a Python script to import leads from CSV files directly into the CRM
 - **WhatsApp Automation** — Headless Chrome automation that navigates Meta Business Suite to compose and send WhatsApp messages
 - **Session Management** — Persistent Playwright auth state to avoid repeated Facebook logins
 
@@ -79,9 +80,22 @@ Copy `config.example.json` to `config.json` and fill in:
     "Abid": "আবিদ",
     "Shoyeb": "শোয়েব",
     "Fahim": "ফাহিম"
+  },
+  "pythonScript": {
+    "enabled": true,
+    "projectPath": "/path/to/python/project",
+    "csvFolderPath": "/path/to/csv/folder",
+    "type": "lead",
+    "sentBy": "Shoyeb"
   }
 }
 ```
+
+- **`pythonScript.enabled`** — set `true` to enable the CSV importer feature
+- **`pythonScript.projectPath`** — absolute path to the Python project folder (uses `uv`)
+- **`pythonScript.csvFolderPath`** — path to the folder containing CSV files to import
+- **`pythonScript.type`** — lead type to use when importing (e.g., "lead", "Ed-Tech", "Agency")
+- **`pythonScript.sentBy`** — team member name to assign imported leads to
 
 - **`autoSender.enabled`** — set `true` to activate the auto-sender loop
 - **`autoSender.sentBy`** — which team member to watch for (must match `Sent by` column values)
@@ -108,7 +122,7 @@ bun run login.ts
 bun run main.ts
 ```
 
-Opens at `http://localhost:3000`
+Opens at `http://localhost:4292` (or the port specified in `config.json`)
 
 #### Running in the background with PM2
 
@@ -142,6 +156,29 @@ When `autoSender.enabled` is `true`, the auto-sender runs in the background alon
 3. Sends the WhatsApp message via headless Chrome
 4. Updates the CRM: sets `Message Sent = "yes"` and `Date = today`
 5. If sending fails, retries every 60 seconds until successful before waiting for the next interval
+
+### CSV Importer
+
+The CSV Importer allows you to run a Python script to import leads from CSV files directly into the CRM.
+
+**Configuration** (in `config.json`):
+```json
+"pythonScript": {
+  "enabled": true,
+  "projectPath": "/home/shoyeb/migration_backup/Code/maps",
+  "csvFolderPath": "unprocessed",
+  "type": "Agency",
+  "sentBy": "Shoyeb"
+}
+```
+
+**Usage:**
+- Click **Run CSV Importer** in the frontend to start the import
+- View real-time output in the terminal panel
+- Click **Stop** to cancel the running process (any user viewing the page can stop it)
+- Output persists for 1 minute after completion, so users who refresh will still see the results
+
+The script runs: `uv run --directory "<projectPath>" python -u main.py --path "<csvFolderPath>" --crm --url "<crmUrl>" --type "<type>" --sentby "<sentBy>"`
 
 ### Session Browser (refresh auth state)
 
