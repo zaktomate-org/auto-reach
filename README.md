@@ -5,7 +5,8 @@ A cold outreach CRM built with Bun, Playwright, and Google Sheets API. Automates
 ## Features
 
 - **CRM Entry Form** — Add leads (company, WhatsApp number, type, URLs, team member, message status)
-- **Number Checker** — Verify if a WhatsApp number already exists in the spreadsheet
+- **Number Checker** — Verify if a WhatsApp number already exists in the spreadsheet (uses cached buffer)
+- **Batch Entry API** — Add multiple leads in a single request (up to 50 entries)
 - **Auto-Sender** — Background loop that checks for un-messaged leads, sends templated WhatsApp messages via Meta Business Suite, and updates the CRM with sent timestamp
 - **Scheduling** — Configure active hours for the auto-sender
 - **Daily Limits** — Set maximum messages per day
@@ -244,6 +245,74 @@ bun run automate.ts 1533181574 "Hello, interested in our services"
 ```
 
 Flow: Opens Meta Business Suite → navigates to WhatsApp inbox → composes and sends a message → waits 60s → saves auth state → closes.
+
+## API Endpoints
+
+### Number Checker with Buffer
+
+`GET /api/check?number=<phone>`
+
+Checks if a phone number exists in the CRM. Uses a cached buffer (`number-buffer.json`) that refreshes every 12 hours from Google Sheets.
+
+**Response:** `"match"` or `"not match"`
+
+### Single Entry
+
+`POST /api/entry`
+
+Add a single lead to the CRM.
+
+```bash
+curl -X POST http://localhost:4292/api/entry \
+  -H "Content-Type: application/json" \
+  -d '{
+    "company": "Acme Corp",
+    "whatsapp": "8801234567890",
+    "type": "Ed-Tech",
+    "sentBy": "Shoyeb",
+    "messageSent": "no",
+    "website": "https://acme.com",
+    "facebook": "https://facebook.com/acme"
+  }'
+```
+
+**Response:** `{ "ok": true }`
+
+### Batch Entry
+
+`POST /api/batch-entry`
+
+Add multiple leads in a single request (max 50 entries). Fails entirely if any single entry is invalid.
+
+```bash
+curl -X POST http://localhost:4292/api/batch-entry \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "company": "Acme Corp",
+      "whatsapp": "8801234567890",
+      "type": "Ed-Tech",
+      "sentBy": "Shoyeb",
+      "messageSent": "no"
+    },
+    {
+      "company": "Tech Agency",
+      "whatsapp": "8801987654321",
+      "type": "Agency",
+      "sentBy": "Shoyeb",
+      "messageSent": "no"
+    }
+  ]'
+```
+
+**Response:** `{ "ok": true, "count": 2 }`
+
+**Error responses:**
+
+- `{"error": "Request body must be an array"}` — body is not an array
+- `{"error": "No entries provided"}` — empty array
+- `{"error": "Maximum 50 entries per batch"}` — exceeds limit
+- `{"error": "Missing required field: <field>"}` — validation failed for any entry
 
 ## Project Structure
 
