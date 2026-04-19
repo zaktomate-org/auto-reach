@@ -100,6 +100,25 @@ async function addEntry(data: Record<string, string>) {
   });
 }
 
+async function addBatchEntries(entries: Record<string, string>[]) {
+  const doc = await getDoc();
+  const sheet = doc.sheetsByIndex[0];
+  const rows = entries.map(entry => ({
+    'Company Name': entry.company,
+    'WhatsApp': entry.whatsapp,
+    'Type': entry.type,
+    'Website URL': entry.website || '',
+    'Facebook Page URL': entry.facebook || '',
+    'Sent by': entry.sentBy,
+    'Added in': parseSentIn(entry.sentIn),
+    'Message Sent': entry.messageSent,
+    'Response': '',
+    'Follow Up': '0',
+    'Video Sent': 'no',
+  }));
+  await sheet.addRows(rows);
+}
+
 async function findPendingLead(): Promise<GoogleSpreadsheetRow | null> {
   const doc = await getDoc();
   const sheet = doc.sheetsByIndex[0];
@@ -627,10 +646,10 @@ const server = Bun.serve({
         });
       }
 
-      const requiredFields = ['company', 'whatsapp', 'type', 'sentBy', 'messageSent'];
+      const requiredFields = ['company', 'type', 'sentBy', 'messageSent'];
       for (const entry of entries) {
         for (const field of requiredFields) {
-          if (!entry[field]) {
+          if (entry[field] === undefined || entry[field] === null || entry[field] === '') {
             return new Response(JSON.stringify({ error: `Missing required field: ${field}` }), {
               status: 400,
               headers: { 'Content-Type': 'application/json' },
@@ -640,23 +659,33 @@ const server = Bun.serve({
       }
 
       try {
-        const newNumbers: string[] = [];
-        for (const entry of entries) {
-          const entryData = {
+        const validEntries = entries
+          .filter(entry => entry.company && entry.type && entry.sentBy && entry.messageSent)
+          .map(entry => ({
             company: entry.company,
-            whatsapp: entry.whatsapp,
+            whatsapp: entry.whatsapp || '',
             type: entry.type,
             website: entry.website || '',
             facebook: entry.facebook || '',
             sentBy: entry.sentBy,
             sentIn: entry.sentIn,
             messageSent: entry.messageSent,
-          };
-          await addEntry(entryData);
-          newNumbers.push(cleanNumber(entry.whatsapp));
+          }));
+
+        if (validEntries.length === 0) {
+          return new Response(JSON.stringify({ error: 'No valid entries to add' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
+
+        await addBatchEntries(validEntries);
+
+        const newNumbers = validEntries
+          .filter(e => e.whatsapp)
+          .map(e => cleanNumber(e.whatsapp));
         await appendToBuffer(newNumbers);
-        return new Response(JSON.stringify({ ok: true, count: entries.length }), {
+        return new Response(JSON.stringify({ ok: true, count: validEntries.length }), {
           headers: { 'Content-Type': 'application/json' },
         });
       } catch (err: any) {
