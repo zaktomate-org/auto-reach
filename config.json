@@ -17,7 +17,7 @@
     ]
   },
   "autoSender": {
-    "enabled": true,
+    "enabled": false,
     "sentBy": "Shoyeb",
     "ignoreSentByFilter": true,
     "intervalMinMs": 8,

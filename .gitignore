@@ -3,6 +3,9 @@ account.json
 
 auth.json
 
+# Numbers cache buffer
+numbers-buffer.json
+
 # Helper scripts (independent logic per script)
 helpers/
 elements/
