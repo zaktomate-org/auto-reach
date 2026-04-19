@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Add phone number buffer with 12-hour refresh and batch entry API**
+- [x] **Track: Add phone number buffer with 12-hour refresh and batch entry API**
   *Link: [./conductor/tracks/buffer-batch_20260420/](./conductor/tracks/buffer-batch_20260420/)*

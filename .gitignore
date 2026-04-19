@@ -3,6 +3,9 @@ account.json
 
 auth.json
 
+# Phone number buffer (sensitive data)
+number-buffer.json
+
 # Helper scripts (independent logic per script)
 helpers/
 elements/

@@ -5,6 +5,8 @@ import { spawn } from 'child_process';
 import creds from './account.json';
 import config from './config.json';
 import { writeFile } from 'fs/promises';
+import { readBuffer, isBufferExpired, getBufferLastUpdated, refreshBuffer, appendToBuffer } from './buffer';
+import type { BufferData } from './buffer';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 
@@ -555,7 +557,14 @@ const server = Bun.serve({
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const numbers = await loadNumbers();
+
+      let numbers = await readBuffer();
+      const lastUpdated = await getBufferLastUpdated();
+
+      if (!lastUpdated || isBufferExpired(lastUpdated)) {
+        numbers = await refreshBuffer();
+      }
+
       const cleaned = cleanNumber(input);
       const found = numbers.includes(cleaned);
       return new Response(JSON.stringify(found ? 'match' : 'not match'), {
@@ -568,7 +577,61 @@ const server = Bun.serve({
       const body = await req.json();
       try {
         await addEntry(body);
+        const newNumber = cleanNumber(body.whatsapp);
+        await appendToBuffer([newNumber]);
         return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // POST /api/batch-entry
+    if (url.pathname === '/api/batch-entry' && req.method === 'POST') {
+      const entries = await req.json();
+      if (!Array.isArray(entries)) {
+        return new Response(JSON.stringify({ error: 'Request body must be an array' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (entries.length === 0) {
+        return new Response(JSON.stringify({ error: 'No entries provided' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (entries.length > 50) {
+        return new Response(JSON.stringify({ error: 'Maximum 50 entries per batch' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const requiredFields = ['company', 'whatsapp', 'type', 'sentBy', 'messageSent'];
+      for (const entry of entries) {
+        for (const field of requiredFields) {
+          if (!entry[field]) {
+            return new Response(JSON.stringify({ error: `Missing required field: ${field}` }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
+
+      try {
+        const newNumbers: string[] = [];
+        for (const entry of entries) {
+          await addEntry(entry);
+          newNumbers.push(cleanNumber(entry.whatsapp));
+        }
+        await appendToBuffer(newNumbers);
+        return new Response(JSON.stringify({ ok: true, count: entries.length }), {
           headers: { 'Content-Type': 'application/json' },
         });
       } catch (err: any) {
