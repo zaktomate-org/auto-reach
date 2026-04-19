@@ -572,6 +572,21 @@ const server = Bun.serve({
       });
     }
 
+    // POST /api/buffer-refresh
+    if (url.pathname === '/api/buffer-refresh' && req.method === 'POST') {
+      try {
+        await refreshBuffer();
+        return new Response(JSON.stringify({ ok: true, message: 'Buffer refreshed' }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // POST /api/entry
     if (url.pathname === '/api/entry' && req.method === 'POST') {
       const body = await req.json();

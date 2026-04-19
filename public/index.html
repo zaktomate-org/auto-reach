@@ -109,6 +109,9 @@
           <button type="submit" class="btn-secondary">Check</button>
           <div class="msg" id="checkMsg"></div>
         </form>
+        <div class="divider"></div>
+        <button type="button" class="btn-orange" id="refreshBufferBtn">Force Refresh Buffer</button>
+        <div class="msg" id="bufferMsg"></div>
       </div>
 
       <div class="card">
@@ -251,6 +254,22 @@
       const text = await res.text();
       const isMatch = JSON.parse(text) === 'match';
       showMsg('checkMsg', isMatch ? 'Number found in CRM' : 'Number not found', isMatch);
+    });
+
+    // Refresh buffer
+    document.getElementById('refreshBufferBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('refreshBufferBtn');
+      btn.disabled = true;
+      btn.textContent = 'Refreshing...';
+      const res = await fetch('/api/buffer-refresh', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showMsg('bufferMsg', 'Buffer refreshed successfully!', true);
+      } else {
+        showMsg('bufferMsg', data.error || 'Failed to refresh buffer', false);
+      }
+      btn.disabled = false;
+      btn.textContent = 'Force Refresh Buffer';
     });
 
     // View logs

@@ -1,5 +1,5 @@
 {
-  "port": 4292,
+  "port": 9002,
   "dropdowns": {
     "type": [
       "Ed-Tech",
@@ -22,17 +22,25 @@
     "ignoreSentByFilter": true,
     "intervalMinMs": 8,
     "intervalMaxMs": 12,
-    "maxMessagesPerDay": 100,
+    "maxMessagesPerDay": 20,
     "schedules": [
       {
-        "start": "08:00",
-        "end": "09:00"
+        "start": "07:00",
+        "end": "12:00"
+      },
+      {
+        "start": "15:00",
+        "end": "17:00"
+      },
+      {
+        "start": "18:00",
+        "end": "22:00"
       }
     ]
   },
   "templates": {
     "Ed-Tech": "As-Salamu Alaikum. {{Personalization}} with {{Company_Name}}\n\nQuick one: I'm {{Your_Name}} from Zaktomate, we help growing teams like yours automate the repetitive work with AI. Recently helped a similar team cut their admin workload by about 50%. We offer a Free 7-day audit showing exactly which tasks your team could hand off to automation. I can record a 5-min video explaining how it works for ed-tech setups like yours.\n\nShould I send it here, or is there someone better to send it to?",
-    "Agency": "As-Salamu Alaikum\n\nNoticed {{Company_Name}} has been putting out some World-Class work for Bangladeshi brands — the kind that actually matters for clients.\n\nQuick one: I'm {{Your_Name}} from Zaktomate. We help growing teams like yours automate the repetitive work with AI. Recently helped a similar team cut their admin workload by about 50%.\n\nWe're offering a free 7-day audit that maps out exactly which tasks your team could hand off to automation. I can also record a short 5-min video showing how it works specifically for agency setups like yours.\n\nWould it make sense to send that here, or is there a better person on the team to send it to?",
+    "Agency": "As-Salamu Alaikum\n\nNoticed {{Company_Name}} has been putting out some World-Class work for Bangladeshi brands — the kind that actually matters for clients.\n\nQuick one: I'm {{Your_Name}} from Zaktomate. We help growing teams like yours automate repetitive work with AI. Recently helped a similar team cut their admin workload by about 50%.\n\nWe're offering a free 7-day audit that maps out exactly which tasks your team could hand off to automation. I have a detailed guide that shows how you can find opportunities for AI & Automation in your Business.  I can also record a short 5-min video explaining how it works specifically for agency setups like yours.\n\nWould it make sense to send that here, or is there a better person on the team to send it to?\n\n[Just reply with a \"yes\" if you want it sent here. Otherwise, type \"no\" if you don't want to hear from us. Thanks!]",
     "F-Commerce": "আসসালামু আলাইকুম ভাই।\n\nআপনাদের ফেসবুক পেইজ {{Facebook_Page_Name}} দেখছিলাম। মনে হলো আপনারা সত্যি-ই কাস্টমারদের কাছে সেরা পণ্যটা দিচ্ছেন।\n\nএকটু জিজ্ঞেস করতে চাইছিলাম — অর্ডার কনফার্মেশন, কাস্টমার মেসেজের রিপ্লাই, বা ডেলিভারি আপডেট — এগুলো কি এখনো ম্যানুয়ালি করছেন?\n\nআমি {{Your_Name}}, Zaktomate থেকে বলছি। আমরা এফ-কমার্স বিজনেসদের এই রুটিন কাজগুলো AI দিয়ে অটোমেটিকভাবে করতে সাহায্য করি। সম্প্রতি আমরা দুটো এফ-কমার্স ব্যবসার সাথে কাজ করে তাদের রুটিন খরচ ৫০% কমাতে সাহায্য করেছি।\n\nআপনার বিজনেসে ঠিক কোথায় কোথায় AI কাজে লাগবে সেটা বোঝার জন্য আমরা ৭ দিনের মধ্যে একটা সম্পূর্ণ ফ্রি রিপোর্ট দিই।\n\nআমি কি এ ব্যাপারে আপনার সাথে ৫ মিনিট কথা বলতে পারি?"
   },
   "banglaNames": {
@@ -42,9 +50,9 @@
   },
   "pythonScript": {
     "enabled": true,
-    "projectPath": "/home/shoyeb/migration_backup/Code/maps/",
-    "csvFolderPath": "unprocessed",
+    "projectPath": "/home/shoyeb/projects/map/",
+    "csvFolderPath": "gmapsdata",
     "type": "Agency",
-    "sentBy": "Shoyeb"
+    "sentBy": "Abid"
   }
 }
