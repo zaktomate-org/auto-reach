@@ -4,20 +4,9 @@ import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 import creds from './account.json';
 import config from './config.json';
-import { writeFile, readFile } from 'fs/promises';
+import { writeFile } from 'fs/promises';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
-
-function safeStringify(obj: unknown): string {
-  return JSON.stringify(obj, (key, value) => {
-    if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) return null;
-    return value;
-  });
-}
-const NUMBERS_BUFFER_FILE = './numbers-buffer.json';
-const BUFFER_REFRESH_HOURS = 12;
-const BUFFER_REFRESH_MS = BUFFER_REFRESH_HOURS * 60 * 60 * 1000;
-const ENTRY_BATCH_DELAY_MS = 5000;
 
 const auth = new JWT({
   email: creds.client_email,
@@ -26,8 +15,7 @@ const auth = new JWT({
 });
 
 // ── Helpers ──────────────────────────────────────────────
-function cleanNumber(raw: unknown): string {
-  if (!raw || typeof raw !== 'string') return '';
+function cleanNumber(raw: string): string {
   let num = raw.replace(/[\s\-]/g, '');
   const oneIndex = num.indexOf('1');
   if (oneIndex !== -1) num = num.slice(oneIndex);
@@ -69,41 +57,6 @@ async function loadNumbers(): Promise<string[]> {
   return numbers;
 }
 
-interface NumbersBuffer {
-  numbers: string[];
-  updatedAt: number;
-}
-
-async function readNumbersBuffer(): Promise<NumbersBuffer | null> {
-  try {
-    const data = await readFile(NUMBERS_BUFFER_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
-
-async function writeNumbersBuffer(numbers: string[]): Promise<void> {
-  const buffer: NumbersBuffer = {
-    numbers,
-    updatedAt: Date.now(),
-  };
-  await writeFile(NUMBERS_BUFFER_FILE, JSON.stringify(buffer, null, 2));
-}
-
-async function getCachedNumbers(): Promise<string[]> {
-  const buffer = await readNumbersBuffer();
-  const now = Date.now();
-
-  if (buffer && now - buffer.updatedAt < BUFFER_REFRESH_MS) {
-    return buffer.numbers;
-  }
-
-  const numbers = await loadNumbers();
-  await writeNumbersBuffer(numbers);
-  return numbers;
-}
-
 function formatDateTimeForSheet(date: Date = new Date()): string {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -126,28 +79,23 @@ function parseSentIn(sentIn: string | undefined): string {
   return formatDateTimeForSheet();
 }
 
-async function addEntry(data: Record<string, unknown>) {
-  const normalizePhone = (val: unknown): string => {
-    if (val === null || val === undefined) return '';
-    if (typeof val === 'string') return val.trim();
-    if (typeof val === 'number') {
-      if (isNaN(val) || !isFinite(val)) return '';
-      return String(Math.floor(val));
-    }
-    return String(val);
-  };
-
-  const entryData: EntryData = {
-    company: normalizePhone(data.company),
-    whatsapp: normalizePhone(data.whatsapp),
-    type: normalizePhone(data.type),
-    website: normalizePhone(data.website),
-    facebook: normalizePhone(data.facebook),
-    sentBy: normalizePhone(data.sentBy),
-    sentIn: normalizePhone(data.sentIn),
-    messageSent: normalizePhone(data.messageSent),
-  };
-  await queueEntry(entryData);
+async function addEntry(data: Record<string, string>) {
+  const doc = await getDoc();
+  const sheet = doc.sheetsByIndex[0];
+  const addedIn = parseSentIn(data.sentIn);
+  await sheet.addRow({
+    'Company Name': data.company,
+    'WhatsApp': data.whatsapp,
+    'Type': data.type,
+    'Website URL': data.website,
+    'Facebook Page URL': data.facebook,
+    'Sent by': data.sentBy,
+    'Added in': addedIn,
+    'Message Sent': data.messageSent,
+    'Response': '',
+    'Follow Up': '0',
+    'Video Sent': 'no',
+  });
 }
 
 async function findPendingLead(): Promise<GoogleSpreadsheetRow | null> {
@@ -259,81 +207,6 @@ const autoSenderState = {
   dailyMessageCount: 0,
   lastResetDate: new Date().toDateString(),
 };
-
-// ── Batch Entry Queue ───────────────────────────────────
-interface EntryData {
-  company: string;
-  whatsapp: string;
-  type: string;
-  website: string;
-  facebook: string;
-  sentBy: string;
-  sentIn: string;
-  messageSent: string;
-}
-
-const entryQueue: EntryData[] = [];
-let entryFlushTimer: Timer | null = null;
-let entryQueueLocked = false;
-
-async function flushEntryBatch() {
-  if (entryQueueLocked || entryQueue.length === 0) return;
-  entryQueueLocked = true;
-
-  const batch = entryQueue.splice(0, entryQueue.length);
-  entryQueueLocked = false;
-
-  try {
-    const doc = await getDoc();
-    const sheet = doc.sheetsByIndex[0];
-
-    const rowsToAdd = batch.map(data => ({
-      'Company Name': data.company,
-      'WhatsApp': data.whatsapp || '',
-      'Type': data.type,
-      'Website URL': data.website,
-      'Facebook Page URL': data.facebook,
-      'Sent by': data.sentBy,
-      'Added in': parseSentIn(data.sentIn),
-      'Message Sent': data.messageSent,
-      'Response': '',
-      'Follow Up': '0',
-      'Video Sent': 'no',
-    }));
-
-    await sheet.addRows(rowsToAdd);
-
-    const buffer = await readNumbersBuffer();
-    const uniqueNumbers = new Set<string>();
-    for (const data of batch) {
-      const cleaned = cleanNumber(data.whatsapp);
-      if (cleaned && buffer && !buffer.numbers.includes(cleaned) && !uniqueNumbers.has(cleaned)) {
-        buffer.numbers.push(cleaned);
-        uniqueNumbers.add(cleaned);
-      }
-    }
-    if (buffer && uniqueNumbers.size > 0) {
-      await writeNumbersBuffer(buffer.numbers);
-    }
-
-    console.log(`[Batch] Flushed ${batch.length} entries to CRM`);
-  } catch (err) {
-    console.error('[Batch] Flush error:', err);
-  }
-}
-
-function scheduleFlush() {
-  if (entryFlushTimer) clearTimeout(entryFlushTimer);
-  entryFlushTimer = setTimeout(() => {
-    flushEntryBatch();
-    entryFlushTimer = null;
-  }, ENTRY_BATCH_DELAY_MS);
-}
-
-async function queueEntry(data: EntryData) {
-  entryQueue.push(data);
-  scheduleFlush();
-}
 
 function resetDailyCount() {
   autoSenderState.dailyMessageCount = 0;
@@ -682,7 +555,7 @@ const server = Bun.serve({
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const numbers = await getCachedNumbers();
+      const numbers = await loadNumbers();
       const cleaned = cleanNumber(input);
       const found = numbers.includes(cleaned);
       return new Response(JSON.stringify(found ? 'match' : 'not match'), {
@@ -692,29 +565,14 @@ const server = Bun.serve({
 
     // POST /api/entry
     if (url.pathname === '/api/entry' && req.method === 'POST') {
-      let rawBody = await req.text();
-      while (rawBody.includes('nan') || rawBody.includes('NaN')) {
-        rawBody = rawBody.replace(/\bNaN\b/gi, 'null');
-      }
-      while (rawBody.includes('Infinity') || rawBody.includes('infinity')) {
-        rawBody = rawBody.replace(/\bInfinity\b/gi, 'null').replace(/-Infinity/gi, 'null');
-      }
-      let body;
-      try {
-        body = JSON.parse(rawBody);
-      } catch {
-        return new Response(safeStringify({ error: 'Invalid JSON' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+      const body = await req.json();
       try {
         await addEntry(body);
-        return new Response(safeStringify({ ok: true }), {
+        return new Response(JSON.stringify({ ok: true }), {
           headers: { 'Content-Type': 'application/json' },
         });
       } catch (err: any) {
-        return new Response(safeStringify({ error: err.message }), {
+        return new Response(JSON.stringify({ error: err.message }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -896,15 +754,6 @@ const server = Bun.serve({
         max: config.autoSender.maxMessagesPerDay,
         date: autoSenderState.lastResetDate,
       }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // POST /api/numbers-buffer/reset
-    if (url.pathname === '/api/numbers-buffer/reset' && req.method === 'POST') {
-      const numbers = await loadNumbers();
-      await writeNumbersBuffer(numbers);
-      return new Response(JSON.stringify({ ok: true, count: numbers.length }), {
         headers: { 'Content-Type': 'application/json' },
       });
     }

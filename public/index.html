@@ -144,14 +144,6 @@
       </div>
 
       <div class="card">
-        <h1>Number Buffer</h1>
-        <div class="row" style="gap: 0.5rem;">
-          <button type="button" class="btn-secondary" id="resetBufferBtn">Reset Buffer</button>
-        </div>
-        <div class="msg" id="bufferMsg"></div>
-      </div>
-
-      <div class="card">
         <h1>Message Templates</h1>
         <div id="templatesContainer"></div>
         <div class="msg" id="templateMsg"></div>
@@ -478,28 +470,6 @@
       });
 
       loadStatus();
-    })();
-
-    // Number Buffer Reset
-    (function initBufferReset() {
-      const resetBtn = document.getElementById('resetBufferBtn');
-      const bufferMsg = document.getElementById('bufferMsg');
-
-      resetBtn.addEventListener('click', async () => {
-        resetBtn.disabled = true;
-        try {
-          const res = await fetch('/api/numbers-buffer/reset', { method: 'POST' });
-          const data = await res.json();
-          if (data.ok) {
-            showMsg('bufferMsg', `Buffer reset: ${data.count} numbers loaded`, true);
-          } else {
-            showMsg('bufferMsg', data.error || 'Failed to reset', false);
-          }
-        } catch (err) {
-          showMsg('bufferMsg', err.message, false);
-        }
-        resetBtn.disabled = false;
-      });
     })();
   </script>
 </body>
