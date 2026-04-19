@@ -625,9 +625,8 @@ const server = Bun.serve({
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const host = req.headers.get('host') || 'localhost:3000';
-      const protocol = host.includes('localhost') ? 'http' : 'https';
-      const crmUrl = `${protocol}://${host}`;
+      const port = config.port || 3000;
+      const crmUrl = `http://localhost:${port}`;
       const result = startPythonScript(crmUrl);
       return new Response(JSON.stringify(result), {
         headers: { 'Content-Type': 'application/json' },
