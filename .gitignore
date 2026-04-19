@@ -1,9 +1,6 @@
 # Service account credentials (never commit)
 account.json
 
-# Config with sensitive IDs
-config.json
-
 auth.json
 
 # Helper scripts (independent logic per script)
