@@ -272,9 +272,20 @@ curl -X POST http://localhost:4292/api/entry \
     "sentBy": "Shoyeb",
     "messageSent": "no",
     "website": "https://acme.com",
-    "facebook": "https://facebook.com/acme"
+    "facebook": "https://facebook.com/acme",
+    "sentIn": "10:30 am"
   }'
 ```
+
+**Fields:**
+- `company` (required) — Company name
+- `whatsapp` (required) — WhatsApp number
+- `type` (required) — Lead type (Ed-Tech, Agency, F-Commerce)
+- `sentBy` (required) — Team member name
+- `messageSent` (required) — "yes" or "no"
+- `website` (optional) — Website URL
+- `facebook` (optional) — Facebook page URL
+- `sentIn` (optional) — Time string like "10:30 am" (auto-set to current time if not provided)
 
 **Response:** `{ "ok": true }`
 
@@ -293,7 +304,9 @@ curl -X POST http://localhost:4292/api/batch-entry \
       "whatsapp": "8801234567890",
       "type": "Ed-Tech",
       "sentBy": "Shoyeb",
-      "messageSent": "no"
+      "messageSent": "no",
+      "website": "https://acme.com",
+      "facebook": "https://facebook.com/acme"
     },
     {
       "company": "Tech Agency",

@@ -627,7 +627,17 @@ const server = Bun.serve({
       try {
         const newNumbers: string[] = [];
         for (const entry of entries) {
-          await addEntry(entry);
+          const entryData = {
+            company: entry.company,
+            whatsapp: entry.whatsapp,
+            type: entry.type,
+            website: entry.website || '',
+            facebook: entry.facebook || '',
+            sentBy: entry.sentBy,
+            sentIn: entry.sentIn,
+            messageSent: entry.messageSent,
+          };
+          await addEntry(entryData);
           newNumbers.push(cleanNumber(entry.whatsapp));
         }
         await appendToBuffer(newNumbers);
