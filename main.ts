@@ -127,6 +127,10 @@ async function findPendingLead(): Promise<GoogleSpreadsheetRow | null> {
   return rows.find((row) => {
     const messageSent = row.get('Message Sent')?.trim().toLowerCase();
     if (messageSent !== 'no') return false;
+
+    const whatsapp = row.get('WhatsApp')?.trim();
+    if (!whatsapp) return false;
+
     if (config.autoSender.ignoreSentByFilter) return true;
     const sentBy = row.get('Sent by')?.trim();
     return sentBy === config.autoSender.sentBy;
