@@ -1,12 +1,12 @@
 import { GoogleSpreadsheet, GoogleSpreadsheetRow } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
-import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 import creds from './account.json';
 import config from './config.json';
 import { writeFile } from 'fs/promises';
 import { readBuffer, isBufferExpired, getBufferLastUpdated, refreshBuffer, appendToBuffer } from './buffer';
 import type { BufferData } from './buffer';
+import { validateWhatsAppNumber, sendWhatsAppViaWebJS } from './whatsapp-helper';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 
@@ -119,14 +119,18 @@ async function addBatchEntries(entries: Record<string, string>[]) {
   await sheet.addRows(rows);
 }
 
-async function findPendingLead(): Promise<GoogleSpreadsheetRow | null> {
+async function findPendingLeads(): Promise<GoogleSpreadsheetRow[]> {
   const doc = await getDoc();
   const sheet = doc.sheetsByIndex[0];
   const rows = await sheet.getRows();
 
-  return rows.find((row) => {
+  return rows.filter((row) => {
     const messageSent = row.get('Message Sent')?.trim().toLowerCase();
     if (messageSent !== 'no') return false;
+
+    // Filter out rows where 'inw' is 'no' (not on WhatsApp)
+    const inw = row.get('inw')?.trim().toLowerCase();
+    if (inw === 'no') return false;
 
     const whatsapp = row.get('WhatsApp')?.trim();
     if (!whatsapp) return false;
@@ -134,7 +138,7 @@ async function findPendingLead(): Promise<GoogleSpreadsheetRow | null> {
     if (config.autoSender.ignoreSentByFilter) return true;
     const sentBy = row.get('Sent by')?.trim();
     return sentBy === config.autoSender.sentBy;
-  }) || null;
+  });
 }
 
 async function markMessageSent(row: GoogleSpreadsheetRow) {
@@ -143,81 +147,9 @@ async function markMessageSent(row: GoogleSpreadsheetRow) {
   await row.save();
 }
 
-// ── Automation (inlined from automate.ts) ────────────────
-async function sendWhatsApp(number: string, message: string) {
-  const browser = await chromium.launch({ headless: true, channel: 'chromium' });
-  const context = await browser.newContext({ storageState: 'auth.json' });
-  context.setDefaultTimeout(90000);
-  context.setDefaultNavigationTimeout(90000);
-  const page = await context.newPage();
-
-  try {
-    console.log('  Step 1: Opening Meta Business Suite...');
-    await page.goto('https://www.facebook.com/business/tools/meta-business-suite');
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 2: Clicking "Get started"...');
-    const [newPage] = await Promise.all([
-      context.waitForEvent('page'),
-      page.getByRole('button', { name: 'Get started' }).first().click(),
-    ]);
-    await newPage.waitForLoadState('domcontentloaded');
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 3: Clicking "Inbox"...');
-    await newPage.locator('a[aria-label="Inbox"]').click();
-    await newPage.waitForLoadState('domcontentloaded');
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 4: Clicking "WhatsApp"...');
-    await newPage.waitForTimeout(3000);
-    await newPage.locator('a[role="link"]').filter({ hasText: 'WhatsApp' }).click();
-    await newPage.waitForLoadState('domcontentloaded');
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 5: Clicking "Send a Message on WhatsApp"...');
-    await newPage.waitForTimeout(5000);
-    await newPage.locator('div[data-sscoverage-ignore="true"]', { hasText: 'Send a Message on WhatsApp' }).click({ force: true, timeout: 90000 });
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 6: Clicking "New WhatsApp number"...');
-    await newPage.locator('div[role="button"]', { hasText: 'New WhatsApp number' }).click();
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 7: Opening country code dropdown...');
-    await newPage.getByText(/\+\d+$/).first().click();
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 8: Typing "bd"...');
-    await newPage.getByTestId('ContextualLayerRoot').getByRole('combobox', { name: 'WhatsApp phone number Country' }).fill('bd');
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 9: Selecting Bangladesh +880...');
-    await newPage.getByTestId('ContextualLayerRoot').getByText('Bangladesh').click();
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 10: Typing phone number...');
-    await newPage.locator('input[type="tel"]').fill(number);
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 11: Pasting message...');
-    const dialog = newPage.getByRole('dialog', { name: 'Send a message on WhatsApp' });
-    const msgInput = dialog.getByRole('textbox', { name: 'Message' });
-    await msgInput.click();
-    await newPage.keyboard.insertText(message);
-    await delay(1000 + Math.random() * 2000);
-
-    console.log('  Step 12: Clicking "Send Message"...');
-    await newPage.getByText('Send Message').click();
-
-    console.log('  Waiting 60 seconds before saving auth...');
-    await delay(60_000);
-
-    await context.storageState({ path: 'auth.json' });
-    console.log('  auth.json saved.');
-  } finally {
-    await browser.close();
-  }
+async function markNotOnWhatsApp(row: GoogleSpreadsheetRow) {
+  row.set('inw', 'no');
+  await row.save();
 }
 
 function delay(ms: number) {
@@ -467,60 +399,78 @@ async function autoSenderLoop() {
   }
 
   while (true) {
+    let waitTimeMs = getRandomInterval();
+    
     try {
       const canSend = canSendAuto();
-      const lead = await findPendingLead();
+      const leads = await findPendingLeads();
+      const count = leads.length;
+      
+      console.log(`[${new Date().toISOString()}] Found ${count} entries with Message Sent = "no".`);
 
-      if (!lead) {
-        const intervalMin = getRandomInterval();
-        console.log(`[${new Date().toISOString()}] No pending leads. Waiting ${intervalMin / 60000} min...`);
+      if (count === 0) {
+        console.log(`[${new Date().toISOString()}] No pending leads. Waiting ${waitTimeMs / 60000} min...`);
       } else if (!canSend.allowed) {
-        const intervalMin = getRandomInterval();
-        console.log(`[${new Date().toISOString()}] Skipping: ${canSend.reason}. Waiting ${intervalMin / 60000} min...`);
+        console.log(`[${new Date().toISOString()}] Skipping: ${canSend.reason}. Waiting ${waitTimeMs / 60000} min...`);
       } else {
-        const type = lead.get('Type')?.trim();
-        const template = (config.templates as Record<string, string>)[type || ''];
+          const lead = leads[0];
+          const type = lead.get('Type')?.trim();
+          const template = (config.templates as Record<string, string>)[type || ''];
 
-        if (!template) {
-          const msg = `Unknown type "${type}" for ${lead.get('Company Name')}. Skipping.`;
-          pushLog(msg);
-          console.log(msg);
-        } else {
-          const whatsapp = lead.get('WhatsApp')?.trim();
-          const companyName = lead.get('Company Name')?.trim() || 'Unknown';
-
-          if (!whatsapp) {
-            const msg = `[${new Date().toISOString()}] No WhatsApp number for ${companyName}. Skipping.`;
+          if (!template) {
+            const msg = `Unknown type "${type}" for ${lead.get('Company Name')}. Skipping.`;
             pushLog(msg);
             console.log(msg);
           } else {
             const message = buildMessage(template, lead);
+            const whatsapp = cleanNumber(lead.get('WhatsApp')?.trim());
             let sent = false;
 
             while (!sent) {
               try {
-                const msg = `[${new Date().toISOString()}] Sending to ${companyName} (${whatsapp}) [${type}]...`;
+                const companyName = lead.get('Company Name')?.trim() || 'Unknown';
+                const msg = `[${new Date().toISOString()}] Validating ${companyName} (${whatsapp})...`;
                 pushLog(msg);
                 console.log(msg);
 
-                await sendWhatsApp(whatsapp, message);
-                await markMessageSent(lead);
+                const isOnWhatsApp = await validateWhatsAppNumber(whatsapp);
+                
+                if (!isOnWhatsApp) {
+                  const noMsg = `[${new Date().toISOString()}] ${companyName} (${whatsapp}) is NOT on WhatsApp. Marking 'inw' = no.`;
+                  pushLog(noMsg);
+                  console.log(noMsg);
+                  await markNotOnWhatsApp(lead);
+                  console.log(`[${new Date().toISOString()}] CRM updated: inw = no for ${companyName}`);
+                  console.log(`[${new Date().toISOString()}] Waiting ${waitTimeMs / 60000} min until next check.`);
+                  sent = true; 
+                  continue;
+                }
 
-                autoSenderState.dailyMessageCount++;
+                const sendMsg = `[${new Date().toISOString()}] Sending to ${companyName} (${whatsapp}) [${type}]...`;
+                pushLog(sendMsg);
+                console.log(sendMsg);
 
-                const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes, Date set for ${companyName} (${autoSenderState.dailyMessageCount} today)`;
-                pushLog(okMsg);
-                console.log(okMsg);
-                sent = true;
+                const success = await sendWhatsAppViaWebJS(whatsapp, message);
+                
+                if (success) {
+                  await markMessageSent(lead);
+                  autoSenderState.dailyMessageCount++;
+                  const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes for ${companyName}`;
+                  pushLog(okMsg);
+                  console.log(okMsg);
+                  console.log(`[${new Date().toISOString()}] Message sent. Waiting ${waitTimeMs / 60000} min until next check.`);
+                  sent = true;
+                } else {
+                  throw new Error('sendWhatsAppViaWebJS returned false');
+                }
               } catch (err: any) {
-                const errMsg = `[${new Date().toISOString()}] Send failed for ${companyName}. Retrying in 60s...`;
+                const errMsg = `[${new Date().toISOString()}] Send failed. Retrying in 60s...`;
                 pushLog(errMsg);
                 console.error(errMsg, err.message);
                 await delay(60000);
               }
             }
           }
-        }
       }
     } catch (err: any) {
       const msg = `[${new Date().toISOString()}] Auto-sender error: ${err.message}`;
@@ -530,11 +480,10 @@ async function autoSenderLoop() {
 
     // Wait for interval or force check signal
     await new Promise<void>((resolve) => {
-      const intervalMs = getRandomInterval();
       const timer = setTimeout(() => {
         autoSenderState.waitUntil = null;
         resolve();
-      }, intervalMs);
+      }, waitTimeMs);
 
       autoSenderState.waitUntil = new Promise<void>((res) => {
         const check = setInterval(() => {

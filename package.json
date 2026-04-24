@@ -13,10 +13,12 @@
     "logs:tail": "tail -f pm2-out.log",
     "status": "pm2 status",
     "save": "pm2 save",
-    "dev": "bun run main.ts"
+    "dev": "bun run main.ts",
+    "login": "bun run login.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/qrcode-terminal": "^0.12.2",
     "pm2": "^6.0.14"
   },
   "peerDependencies": {
@@ -25,6 +27,7 @@
   "dependencies": {
     "google-auth-library": "^10.6.2",
     "google-spreadsheet": "^5.2.0",
-    "playwright": "^1.59.1"
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.6"
   }
 }

@@ -40,3 +40,6 @@ pm2*.log
 temp*
 
 sheet-structure.txt
+
+.wwebjs*/
+
