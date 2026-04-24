@@ -30,7 +30,7 @@ async function getExecutablePath() {
 const executablePath = await getExecutablePath();
 
 const clientId = process.argv.find(arg => arg.startsWith('--clientId='))?.split('=')[1] || 
-                 process.argv[process.argv.indexOf('--clientId') + 1];
+                 (process.argv.includes('--clientId') ? process.argv[process.argv.indexOf('--clientId') + 1] : undefined);
 
 if (clientId) {
     console.log(`Using Client ID: ${clientId}`);
