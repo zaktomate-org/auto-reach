@@ -6,7 +6,12 @@ import config from './config.json';
 import { writeFile } from 'fs/promises';
 import { readBuffer, isBufferExpired, getBufferLastUpdated, refreshBuffer, appendToBuffer } from './buffer';
 import type { BufferData } from './buffer';
-import { validateWhatsAppNumber, sendWhatsAppViaWebJS } from './whatsapp-helper';
+import { 
+  initWhatsAppClient, 
+  checkRegistration, 
+  sendMessage, 
+  getRandomClientId 
+} from './whatsapp-helper';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 
@@ -81,7 +86,7 @@ function parseSentIn(sentIn: string | undefined): string {
   return formatDateTimeForSheet();
 }
 
-async function addEntry(data: Record<string, string>) {
+async function addEntry(data: Record<string, any>) {
   const doc = await getDoc();
   const sheet = doc.sheetsByIndex[0];
   const addedIn = parseSentIn(data.sentIn);
@@ -100,7 +105,7 @@ async function addEntry(data: Record<string, string>) {
   });
 }
 
-async function addBatchEntries(entries: Record<string, string>[]) {
+async function addBatchEntries(entries: Record<string, any>[]) {
   const doc = await getDoc();
   const sheet = doc.sheetsByIndex[0];
   const rows = entries.map(entry => ({
@@ -156,24 +161,62 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+
+// ... (rest of imports) ...
+
 // ── Auto-sender state ────────────────────────────────────
-const autoSenderState = {
-  logs: [] as string[],
-  forceCheck: false,
-  waitUntil: null as Promise<void> | null,
-  dailyMessageCount: 0,
-  lastResetDate: new Date().toDateString(),
-};
+const STATE_FILE = './sender-state.json';
+
+function loadPersistentState() {
+  const defaultState = {
+    dailyMessageCount: 0,
+    lastResetDate: new Date().toDateString(),
+    logs: [] as string[]
+  };
+
+  try {
+    if (existsSync(STATE_FILE)) {
+      const data = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+      // Ensure logs is an array
+      if (!Array.isArray(data.logs)) data.logs = [];
+      return data;
+    }
+  } catch (e) {
+    console.error('Failed to load persistent state:', e);
+  }
+  return defaultState;
+}
+
+const autoSenderState = loadPersistentState();
+autoSenderState.forceCheck = false;
+autoSenderState.waitUntil = null as Promise<void> | null;
+
+function savePersistentState() {
+  try {
+    const data = {
+      dailyMessageCount: autoSenderState.dailyMessageCount,
+      lastResetDate: autoSenderState.lastResetDate,
+      logs: autoSenderState.logs
+    };
+    writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error('Failed to save persistent state:', e);
+  }
+}
 
 function resetDailyCount() {
   autoSenderState.dailyMessageCount = 0;
   autoSenderState.lastResetDate = new Date().toDateString();
+  savePersistentState();
 }
 
 function checkMidnightReset() {
   const today = new Date().toDateString();
   if (autoSenderState.lastResetDate !== today) {
-    resetDailyCount();
+    autoSenderState.dailyMessageCount = 0;
+    autoSenderState.lastResetDate = today;
+    savePersistentState();
     pushLog('Daily message count reset at midnight.');
     console.log('Daily message count reset at midnight.');
   }
@@ -267,9 +310,9 @@ function pushLog(msg: string) {
 // ── Python Script Runner ───────────────────────────────────
 const MAX_BUFFER_LINES = 1000;
 
-let pythonProcess: ReturnType<typeof spawn> | null = null;
+let pythonProcess: any = null;
 let pythonBuffer: { lines: string[]; startedAt: number; finishedAt: number | null } | null = null;
-let pythonCleanupTimer: Timer | null = null;
+let pythonCleanupTimer: any = null;
 
 function clearPythonBuffer() {
   pythonBuffer = null;
@@ -333,7 +376,7 @@ function startPythonScript(crmUrl: string) {
     });
   });
 
-  pythonProcess.on('close', (code) => {
+  pythonProcess.on('close', (code: number) => {
     const exitMsg = code === 0 ? 'Completed (exit code: 0)' : `Failed (exit code: ${code})`;
     pushPythonLine(exitMsg);
     if (pythonBuffer) {
@@ -346,7 +389,7 @@ function startPythonScript(crmUrl: string) {
     }, 60000);
   });
 
-  pythonProcess.on('error', (err) => {
+  pythonProcess.on('error', (err: any) => {
     pushPythonLine(`Error: ${err.message}`, true);
     if (pythonBuffer) {
       pythonBuffer.finishedAt = Date.now();
@@ -381,7 +424,6 @@ function getPythonStatus() {
     output: pythonBuffer?.lines || [],
   };
 }
-
 // ── Auto-sender loop ─────────────────────────────────────
 async function autoSenderLoop() {
   if (!config.autoSender.enabled) {
@@ -389,18 +431,16 @@ async function autoSenderLoop() {
     return;
   }
 
-  if (config.autoSender.ignoreSentByFilter) {
-    pushLog('Auto-sender enabled. Watching for all leads with Message Sent = "no".');
-    console.log('Auto-sender enabled. Watching for all leads with Message Sent = "no".');
-  } else {
-    const msg = `Auto-sender enabled. Watching for leads assigned to "${config.autoSender.sentBy}".`;
-    pushLog(msg);
-    console.log(msg);
-  }
+  const enabledMsg = config.autoSender.ignoreSentByFilter 
+    ? 'Auto-sender enabled. Watching for all leads with Message Sent = "no".'
+    : `Auto-sender enabled. Watching for leads assigned to "${config.autoSender.sentBy}".`;
+  pushLog(enabledMsg);
+  console.log(enabledMsg);
 
   while (true) {
     let waitTimeMs = getRandomInterval();
-    
+    let client: any = null;
+
     try {
       const canSend = canSendAuto();
       const leads = await findPendingLeads();
@@ -413,69 +453,103 @@ async function autoSenderLoop() {
       } else if (!canSend.allowed) {
         console.log(`[${new Date().toISOString()}] Skipping: ${canSend.reason}. Waiting ${waitTimeMs / 60000} min...`);
       } else {
-          const lead = leads[0];
+        // We have leads and we are allowed to send
+        for (let i = 0; i < leads.length; i++) {
+          const lead = leads[i];
           const type = lead.get('Type')?.trim();
+          const companyName = lead.get('Company Name')?.trim() || 'Unknown';
+          const whatsapp = cleanNumber(lead.get('WhatsApp')?.trim());
           const template = (config.templates as Record<string, string>)[type || ''];
 
           if (!template) {
-            const msg = `Unknown type "${type}" for ${lead.get('Company Name')}. Skipping.`;
+            const msg = `Unknown type "${type}" for ${companyName}. Skipping.`;
             pushLog(msg);
             console.log(msg);
-          } else {
-            const message = buildMessage(template, lead);
-            const whatsapp = cleanNumber(lead.get('WhatsApp')?.trim());
-            let sent = false;
-
-            while (!sent) {
-              try {
-                const companyName = lead.get('Company Name')?.trim() || 'Unknown';
-                const msg = `[${new Date().toISOString()}] Validating ${companyName} (${whatsapp})...`;
-                pushLog(msg);
-                console.log(msg);
-
-                const isOnWhatsApp = await validateWhatsAppNumber(whatsapp);
-                
-                if (!isOnWhatsApp) {
-                  const noMsg = `[${new Date().toISOString()}] ${companyName} (${whatsapp}) is NOT on WhatsApp. Marking 'inw' = no.`;
-                  pushLog(noMsg);
-                  console.log(noMsg);
-                  await markNotOnWhatsApp(lead);
-                  console.log(`[${new Date().toISOString()}] CRM updated: inw = no for ${companyName}`);
-                  console.log(`[${new Date().toISOString()}] Waiting ${waitTimeMs / 60000} min until next check.`);
-                  sent = true; 
-                  continue;
-                }
-
-                const sendMsg = `[${new Date().toISOString()}] Sending to ${companyName} (${whatsapp}) [${type}]...`;
-                pushLog(sendMsg);
-                console.log(sendMsg);
-
-                const success = await sendWhatsAppViaWebJS(whatsapp, message);
-                
-                if (success) {
-                  await markMessageSent(lead);
-                  autoSenderState.dailyMessageCount++;
-                  const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes for ${companyName}`;
-                  pushLog(okMsg);
-                  console.log(okMsg);
-                  console.log(`[${new Date().toISOString()}] Message sent. Waiting ${waitTimeMs / 60000} min until next check.`);
-                  sent = true;
-                } else {
-                  throw new Error('sendWhatsAppViaWebJS returned false');
-                }
-              } catch (err: any) {
-                const errMsg = `[${new Date().toISOString()}] Send failed. Retrying in 60s...`;
-                pushLog(errMsg);
-                console.error(errMsg, err.message);
-                await delay(60000);
-              }
-            }
+            continue;
           }
+
+          try {
+            // Start browser if not already open
+            if (!client) {
+              const msg = `[${new Date().toISOString()}] Starting WhatsApp session...`;
+              pushLog(msg);
+              console.log(msg);
+              const clientId = await getRandomClientId();
+              client = await initWhatsAppClient(clientId);
+            }
+
+            const msg = `[${new Date().toISOString()}] Validating ${companyName} (${whatsapp})...`;
+            pushLog(msg);
+            console.log(msg);
+
+            const isOnWhatsApp = await checkRegistration(client, whatsapp);
+            
+            if (!isOnWhatsApp) {
+              const noMsg = `[${new Date().toISOString()}] ${companyName} (${whatsapp}) is NOT on WhatsApp. Marking 'inw' = no.`;
+              pushLog(noMsg);
+              console.log(noMsg);
+              await markNotOnWhatsApp(lead);
+              savePersistentState();
+              
+              // If this was the last lead, we should close the browser
+              if (i === leads.length - 1) {
+                console.log(`[${new Date().toISOString()}] No more leads in batch. Closing session.`);
+                await new Promise(r => setTimeout(r, 2000));
+                await client.destroy();
+                client = null;
+              } else {
+                console.log(`[${new Date().toISOString()}] Continuing to next check with same session.`);
+              }
+              continue; // Move to next lead immediately (no break, same session)
+            }
+
+            // Valid number - build and send message
+            const message = buildMessage(template, lead);
+            const sendMsg = `[${new Date().toISOString()}] Sending to ${companyName} (${whatsapp}) [${type}]...`;
+            pushLog(sendMsg);
+            console.log(sendMsg);
+
+            const success = await sendMessage(client, whatsapp, message);
+            
+            if (success) {
+              await markMessageSent(lead);
+              autoSenderState.dailyMessageCount++;
+              const okMsg = `[${new Date().toISOString()}] CRM updated: Message Sent = yes for ${companyName}`;
+              pushLog(okMsg);
+              console.log(okMsg);
+              savePersistentState();
+            } else {
+              throw new Error('sendMessage returned false');
+            }
+
+            // After a successful send, we always close and start the long cooldown
+            console.log(`[${new Date().toISOString()}] Message processed. Closing session and waiting ${waitTimeMs / 60000} min.`);
+            await new Promise(r => setTimeout(r, 2000));
+            await client.destroy();
+            client = null;
+            break; // Exit the leads loop to trigger the waitTimeMs delay
+
+          } catch (err: any) {
+            const errMsg = `[${new Date().toISOString()}] Lead processing failed: ${err.message}. Retrying in 60s...`;
+            pushLog(errMsg);
+            console.error(errMsg);
+            if (client) {
+              try { await client.destroy(); } catch (e) {}
+              client = null;
+            }
+            await delay(60000);
+            break; // Exit current loop to re-evaluate from scratch
+          }
+        }
       }
     } catch (err: any) {
       const msg = `[${new Date().toISOString()}] Auto-sender error: ${err.message}`;
       pushLog(msg);
       console.error(msg);
+      if (client) {
+        try { await client.destroy(); } catch (e) {}
+        client = null;
+      }
     }
 
     // Wait for interval or force check signal

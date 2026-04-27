@@ -4,12 +4,12 @@ import fs from 'fs';
 import path from 'path';
 
 export async function getExecutablePath() {
-    // 1. Common system paths
     const commonPaths = [
         '/usr/bin/google-chrome',
         '/usr/bin/google-chrome-stable',
         '/usr/bin/chromium',
         '/usr/bin/chromium-browser',
+        '/usr/sbin/chromium',
         '/snap/bin/chromium'
     ];
 
@@ -17,14 +17,13 @@ export async function getExecutablePath() {
         if (fs.existsSync(p)) return p;
     }
 
-    // 2. Try 'which' command to find it in PATH
     try {
         const { execSync } = await import('child_process');
         const path = execSync('which google-chrome || which chromium-browser || which chromium', { encoding: 'utf8' }).trim();
         if (path) return path;
     } catch (e) {}
 
-    return undefined; // Let puppeteer try its default
+    return undefined;
 }
 
 export async function getRandomClientId() {
@@ -40,7 +39,19 @@ export async function getRandomClientId() {
     return randomDir === 'session' ? undefined : randomDir.replace('session-', '');
 }
 
-async function createClient(clientId?: string) {
+export function formatToWhatsAppId(number: string): string {
+    let sanitized = number.replace(/\D/g, '');
+    if (sanitized.length === 11 && sanitized.startsWith('01')) {
+        sanitized = '88' + sanitized;
+    } else if (sanitized.length === 10 && sanitized.startsWith('1')) {
+        sanitized = '880' + sanitized;
+    }
+    return `${sanitized}@c.us`;
+}
+
+// ── New Modular Logic ─────────────────────────────────────
+
+export async function initWhatsAppClient(clientId?: string): Promise<any> {
     const executablePath = await getExecutablePath();
     const client = new Client({
         authStrategy: new LocalAuth({
@@ -56,115 +67,84 @@ async function createClient(clientId?: string) {
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
         }
     });
-    return client;
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            reject(new Error('WhatsApp initialization timed out after 300s'));
+        }, 300000);
+
+        client.on('ready', () => {
+            clearTimeout(timeout);
+            resolve(client);
+        });
+
+        client.on('qr', () => {
+            clearTimeout(timeout);
+            reject(new Error('WhatsApp session expired (QR needed)'));
+        });
+
+        client.initialize().catch(reject);
+    });
 }
 
-function formatToWhatsAppId(number: string): string {
-    let sanitized = number.replace(/\D/g, '');
-    
-    // Auto-add BD country code if it looks like a local number
-    if (sanitized.length === 11 && sanitized.startsWith('01')) {
-        sanitized = '88' + sanitized;
-    } else if (sanitized.length === 10 && sanitized.startsWith('1')) {
-        sanitized = '880' + sanitized;
+export async function checkRegistration(client: any, number: string): Promise<boolean> {
+    const jid = formatToWhatsAppId(number);
+    try {
+        // Try standard check
+        const isRegistered = await client.isRegisteredUser(jid);
+        if (isRegistered) return true;
+
+        // Fallback to getNumberId for Business/LID accounts
+        const fullNumber = jid.split('@')[0];
+        const numberId = await client.getNumberId(fullNumber);
+        return !!numberId;
+    } catch (e) {
+        console.error(`[WhatsApp] Registration check failed for ${number}:`, e.message);
+        return false;
     }
-    
-    return `${sanitized}@c.us`;
 }
+
+export async function sendMessage(client: any, number: string, message: string): Promise<boolean> {
+    const chatId = formatToWhatsAppId(number);
+    try {
+        await client.sendMessage(chatId, message, { waitUntilMsgSent: true });
+        // Buffer for sync
+        await new Promise(r => setTimeout(r, 2000));
+        return true;
+    } catch (err) {
+        console.error(`[WhatsApp] Send error for ${number}:`, err.message);
+        return false;
+    }
+}
+
+// ── Compatibility Wrappers (Keep existing API) ─────────────
 
 export async function validateWhatsAppNumber(number: string): Promise<boolean> {
-    const clientId = await getRandomClientId();
-    const client = await createClient(clientId);
-
-    return new Promise((resolve) => {
-        const timeout = setTimeout(async () => {
-            console.error('[WhatsApp] Validation timed out.');
-            await client.destroy();
-            resolve(false);
-        }, 30000);
-
-        client.on('ready', async () => {
-            try {
-                await client.pupPage.waitForFunction(() => window.Store && window.Store.BusinessProfile, { timeout: 10000 });
-                
-                const jid = formatToWhatsAppId(number);
-                
-                let isRegistered = false;
-                try {
-                    isRegistered = await client.isRegisteredUser(jid);
-                } catch (e) {
-                    const numberId = await client.getNumberId(number);
-                    isRegistered = !!numberId;
-                }
-                
-                clearTimeout(timeout);
-                await client.destroy();
-                resolve(isRegistered);
-            } catch (err) {
-                console.error('[WhatsApp] Validation error:', err);
-                clearTimeout(timeout);
-                await client.destroy();
-                resolve(false);
-            }
-        });
-
-        client.on('qr', async () => {
-            console.error('[WhatsApp] Auth session expired during validation.');
-            clearTimeout(timeout);
-            await client.destroy();
-            resolve(false);
-        });
-
-        client.initialize().catch(async () => {
-            clearTimeout(timeout);
-            resolve(false);
-        });
-    });
+    let client;
+    try {
+        const clientId = await getRandomClientId();
+        client = await initWhatsAppClient(clientId);
+        const result = await checkRegistration(client, number);
+        await new Promise(r => setTimeout(r, 2000));
+        await client.destroy();
+        return result;
+    } catch (e) {
+        if (client) await client.destroy();
+        return false;
+    }
 }
 
 export async function sendWhatsAppViaWebJS(number: string, message: string): Promise<boolean> {
-    const clientId = await getRandomClientId();
-    const client = await createClient(clientId);
-
-    return new Promise((resolve) => {
-        const timeout = setTimeout(async () => {
-            console.error('[WhatsApp] Send message timed out.');
-            await client.destroy();
-            resolve(false);
-        }, 60000);
-
-        client.on('ready', async () => {
-            try {
-                await client.pupPage.waitForFunction(() => window.Store && window.Store.BusinessProfile, { timeout: 10000 });
-                
-                const chatId = formatToWhatsAppId(number);
-
-                await client.sendMessage(chatId, message, { waitUntilMsgSent: true });
-                
-                // Buffer for sync
-                await new Promise(r => setTimeout(r, 5000));
-                
-                clearTimeout(timeout);
-                await client.destroy();
-                resolve(true);
-            } catch (err) {
-                console.error('[WhatsApp] Send error:', err);
-                clearTimeout(timeout);
-                await client.destroy();
-                resolve(false);
-            }
-        });
-
-        client.on('qr', async () => {
-            console.error('[WhatsApp] Auth session expired during send.');
-            clearTimeout(timeout);
-            await client.destroy();
-            resolve(false);
-        });
-
-        client.initialize().catch(async () => {
-            clearTimeout(timeout);
-            resolve(false);
-        });
-    });
+    let client;
+    try {
+        const clientId = await getRandomClientId();
+        client = await initWhatsAppClient(clientId);
+        const result = await sendMessage(client, number, message);
+        await new Promise(r => setTimeout(r, 2000));
+        await client.destroy();
+        return result;
+    } catch (e) {
+        if (client) await client.destroy();
+        return false;
+    }
 }
