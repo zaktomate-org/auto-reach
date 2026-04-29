@@ -2,6 +2,9 @@ import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
+
+const ROTATION_STATE_FILE = './session-rotation.json';
 
 export async function getExecutablePath() {
     const commonPaths = [
@@ -18,25 +21,106 @@ export async function getExecutablePath() {
     }
 
     try {
-        const { execSync } = await import('child_process');
-        const path = execSync('which google-chrome || which chromium-browser || which chromium', { encoding: 'utf8' }).trim();
-        if (path) return path;
+        const whichPath = execSync('which google-chrome || which chromium-browser || which chromium', { encoding: 'utf8' }).trim();
+        if (whichPath) return whichPath;
     } catch (e) {}
 
     return undefined;
 }
 
-export async function getRandomClientId() {
+function getAvailableSessions(): string[] {
     const authPath = './.wwebjs_auth';
-    if (!fs.existsSync(authPath)) return undefined;
-
-    const dirs = fs.readdirSync(authPath).filter(f => 
+    if (!fs.existsSync(authPath)) return [];
+    return fs.readdirSync(authPath).filter(f =>
         fs.statSync(path.join(authPath, f)).isDirectory() && f.startsWith('session')
-    );
+    ).sort();
+}
 
-    if (dirs.length === 0) return undefined;
-    const randomDir = dirs[Math.floor(Math.random() * dirs.length)];
-    return randomDir === 'session' ? undefined : randomDir.replace('session-', '');
+function getRotationIndex(): number {
+    try {
+        if (fs.existsSync(ROTATION_STATE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(ROTATION_STATE_FILE, 'utf-8'));
+            return data.lastIndex ?? 0;
+        }
+    } catch (e) {}
+    return 0;
+}
+
+function saveRotationIndex(index: number) {
+    try {
+        fs.writeFileSync(ROTATION_STATE_FILE, JSON.stringify({ lastIndex: index }));
+    } catch (e) {}
+}
+
+export async function getNextClientId(): Promise<string | undefined> {
+    const sessions = getAvailableSessions();
+    if (sessions.length === 0) return undefined;
+    if (sessions.length === 1) {
+        const session = sessions[0]!;
+        return session === 'session' ? undefined : session.replace('session-', '');
+    }
+
+    const index = getRotationIndex();
+    const session = sessions[index % sessions.length]!;
+    saveRotationIndex((index + 1) % sessions.length);
+
+    return session === 'session' ? undefined : session.replace('session-', '');
+}
+
+export async function cleanupSessionLock(clientId?: string) {
+    const sessionDirName = clientId ? `session-${clientId}` : 'session';
+    const sessionPath = path.resolve('./.wwebjs_auth', sessionDirName);
+
+    if (!fs.existsSync(sessionPath)) return;
+
+    try {
+        const lockFile = path.join(sessionPath, 'SingletonLock');
+        const socketFile = path.join(sessionPath, 'SingletonSocket');
+        const cookieFile = path.join(sessionPath, 'SingletonCookie');
+
+        const staleProcesses = findChromeProcesses(sessionPath);
+        for (const pid of staleProcesses) {
+            try { execSync(`kill -9 ${pid}`, { stdio: 'ignore' }); } catch {}
+        }
+
+        await new Promise(r => setTimeout(r, 500));
+
+        for (const lockPath of [lockFile, socketFile, cookieFile]) {
+            if (fs.existsSync(lockPath)) {
+                try { fs.unlinkSync(lockPath); } catch {}
+            }
+        }
+    } catch (e) {
+        console.error(`[WhatsApp] Failed to cleanup session lock for ${sessionDirName}:`, (e as Error).message);
+    }
+}
+
+function findChromeProcesses(sessionPath: string): string[] {
+    try {
+        const output = execSync('ps aux', { encoding: 'utf8' });
+        const lines = output.split('\n');
+        const pids: string[] = [];
+        for (const line of lines) {
+            if (!line.includes('chrome') && !line.includes('chromium')) continue;
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[1];
+            const ppid = parts[3];
+            if (!pid) continue;
+            if (ppid === '1') {
+                pids.push(pid);
+                continue;
+            }
+            try {
+                const parentCmd = execSync(`ps -o cmd= -p ${ppid}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+                if (!parentCmd) pids.push(pid);
+            } catch {
+                pids.push(pid);
+            }
+        }
+        return pids;
+    } catch {
+        return [];
+    }
 }
 
 export function formatToWhatsAppId(number: string): string {
@@ -52,6 +136,8 @@ export function formatToWhatsAppId(number: string): string {
 // ── New Modular Logic ─────────────────────────────────────
 
 export async function initWhatsAppClient(clientId?: string): Promise<any> {
+    await cleanupSessionLock(clientId);
+
     const executablePath = await getExecutablePath();
     const client = new Client({
         authStrategy: new LocalAuth({
@@ -64,7 +150,7 @@ export async function initWhatsAppClient(clientId?: string): Promise<any> {
         },
         puppeteer: {
             executablePath: executablePath,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
         }
     });
 
@@ -122,7 +208,7 @@ export async function sendMessage(client: any, number: string, message: string):
 export async function validateWhatsAppNumber(number: string): Promise<boolean> {
     let client;
     try {
-        const clientId = await getRandomClientId();
+        const clientId = await getNextClientId();
         client = await initWhatsAppClient(clientId);
         const result = await checkRegistration(client, number);
         await new Promise(r => setTimeout(r, 2000));
@@ -137,7 +223,7 @@ export async function validateWhatsAppNumber(number: string): Promise<boolean> {
 export async function sendWhatsAppViaWebJS(number: string, message: string): Promise<boolean> {
     let client;
     try {
-        const clientId = await getRandomClientId();
+        const clientId = await getNextClientId();
         client = await initWhatsAppClient(clientId);
         const result = await sendMessage(client, number, message);
         await new Promise(r => setTimeout(r, 2000));

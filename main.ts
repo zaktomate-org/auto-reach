@@ -10,7 +10,7 @@ import {
   initWhatsAppClient, 
   checkRegistration, 
   sendMessage, 
-  getRandomClientId 
+  getNextClientId 
 } from './whatsapp-helper';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
@@ -474,7 +474,7 @@ async function autoSenderLoop() {
               const msg = `[${new Date().toISOString()}] Starting WhatsApp session...`;
               pushLog(msg);
               console.log(msg);
-              const clientId = await getRandomClientId();
+              const clientId = await getNextClientId();
               client = await initWhatsAppClient(clientId);
             }
 
